@@ -422,7 +422,8 @@ const MARK_GEO = mergeGeometries([
 ]);
 const BORDER_LINE_MAT = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .3, depthWrite: false });
 function buildBorder() {
-  const water = t => t === LAKE || t === SEA;
+  // ei tolppia vesille eikä teille
+  const water = t => t === LAKE || t === SEA || t === ROAD;
   for (let z = 0; z < H; z++) {
     const fi = idx(BORDER - 1, z), ru = idx(BORDER, z);
     const y = Math.max(tileTop(fi), tileTop(ru));

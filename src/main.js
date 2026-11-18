@@ -389,17 +389,39 @@ function pickCond(n) {
   if (r < .85) return 'fog';
   return seasonOf(n) ? 'storm' : 'fog';
 }
-function setCondition(c) {
+// Ympäristö (taivas, sumu, valot, lumisade) liukuu kohti tavoitetta – ei äkillisiä vaihtoja.
+const mkEnv = () => ({ bg: new THREE.Color(SKY[0]), fogN: 45, fogF: 90, hI: 1.4, sI: 2.2, hC: new THREE.Color(0xe4f0ff), sC: new THREE.Color(0xfff4e0), snow: 0 });
+const env = mkEnv(), envT = mkEnv();
+function setCondition(c, instant) {
   cond = c;
-  const sky = SKY[winter ? 1 : 0];
-  let bg = sky, fogN = 45, fogF = 90, hI = 1.4, sI = 2.2, hC = 0xe4f0ff, sC = 0xfff4e0;
+  let bg = SKY[winter ? 1 : 0], fogN = 45, fogF = 90, hI = 1.4, sI = 2.2, hC = 0xe4f0ff, sC = 0xfff4e0;
   if (c === 'night') { bg = 0x16213a; fogN = 30; fogF = 75; hI = .45; sI = .5; hC = 0x8fa6d8; sC = 0x9fb4ff; }
   else if (c === 'fog') { bg = winter ? 0xd5dce0 : 0xb4bec4; fogN = 12; fogF = 44; hI = 1.2; sI = 1.1; }
   else if (c === 'storm') { bg = 0xc9d2d8; fogN = 14; fogF = 48; hI = 1.1; sI = .9; }
-  scene.background.setHex(bg); scene.fog.color.setHex(bg); scene.fog.near = fogN; scene.fog.far = fogF;
-  hemi.intensity = hI; hemi.color.setHex(hC); sun.intensity = sI; sun.color.setHex(sC);
-  snow.visible = c === 'storm';
+  envT.bg.setHex(bg); envT.fogN = fogN; envT.fogF = fogF; envT.hI = hI; envT.sI = sI; envT.hC.setHex(hC); envT.sC.setHex(sC); envT.snow = c === 'storm' ? 1 : 0;
+  if (instant) { env.bg.copy(envT.bg); env.hC.copy(envT.hC); env.sC.copy(envT.sC); for (const k of ['fogN', 'fogF', 'hI', 'sI', 'snow']) env[k] = envT[k]; applyEnv(); }
 }
+function applyEnv() {
+  scene.background.copy(env.bg); scene.fog.color.copy(env.bg); scene.fog.near = env.fogN; scene.fog.far = env.fogF;
+  hemi.intensity = env.hI; hemi.color.copy(env.hC); sun.intensity = env.sI; sun.color.copy(env.sC);
+  snow.material.opacity = .85 * env.snow; snow.visible = env.snow > .02;
+}
+function envStep(dt) {
+  const k = 1 - Math.exp(-dt / 1.3);            // n. 4 s siirtymä
+  env.bg.lerp(envT.bg, k); env.hC.lerp(envT.hC, k); env.sC.lerp(envT.sC, k);
+  for (const key of ['fogN', 'fogF', 'hI', 'sI', 'snow']) env[key] += (envT[key] - env[key]) * k;
+  applyEnv();
+  // värien liukuvaihdot (vuodenaika)
+  for (const f of fades) {
+    f.t = Math.min(f.T, f.t + dt); const a = f.t / f.T, e = a * a * (3 - 2 * a);
+    if (f.arr) { for (let i = 0; i < f.arr.length; i++) f.arr[i] = f.from[i] + (f.to[i] - f.from[i]) * e; f.attr.needsUpdate = true; }
+    else f.mat.color.copy(f.from).lerp(f.to, e);
+  }
+  fades = fades.filter(f => f.t < f.T);
+}
+let fades = [];
+function fadeAttr(attr, before, T = 3.5) { if (!attr) return; const to = Float32Array.from(attr.array); attr.array.set(before); attr.needsUpdate = true; fades.push({ arr: attr.array, attr, from: before, to, t: 0, T }); }
+function fadeMat(mat, before, T = 3.5) { const to = mat.color.clone(); mat.color.copy(before); fades.push({ mat, from: before, to, t: 0, T }); }
 
 const M = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, flatShading: true, ...o });
 const MAT = {
@@ -1396,10 +1418,20 @@ function endWave() {
 }
 function setWinter(w, announce) {
   winter = w;
+  const tb = tiles.instanceColor ? Float32Array.from(tiles.instanceColor.array) : null;
+  const trb = trees && trees.instanceColor ? Float32Array.from(trees.instanceColor.array) : null;
+  const mats = [MAT.flatRoof, MAT.roof, MAT.street].concat(townGround ? [townGround.material] : []);
+  const mb = mats.map(m => m.color.clone());
   refreshAllTiles(); colorTrees();
   for (const s of structs.values()) s.group.position.y = tileTop(s.i);
   for (const [ri, r] of rubble) r.position.y = tileTop(ri);
   applyTownWinter();
+  if (announce) {
+    fades = [];
+    if (tb) fadeAttr(tiles.instanceColor, tb);
+    if (trb) fadeAttr(trees.instanceColor, trb);
+    mats.forEach((m, k) => fadeMat(m, mb[k]));
+  }
   setCondition(phase === 'wave' ? cond : 'clear');
   recomputeFields();
   if (announce) toast(w ? L('❄️ Talvi saapui – järvet ja suot jäätyivät. Panssarit pääsevät jäitä pitkin!', '❄️ Winter has come – lakes and swamps froze. Tanks can now cross the ice!') : L('☀️ Sulan maan aika – jäät sulivat, järvet ja suot ovat taas esteitä.', '☀️ The thaw – the ice melted, lakes and swamps are obstacles again.'), 'info', 5000);
@@ -1463,7 +1495,7 @@ function loadSector(id, snap) {
   buildTrees();
   buildTown();
   buildBorder();
-  setCondition('clear');
+  fades = []; setCondition('clear', true);
   preview = new THREE.Group(); world.add(preview);
   if (cfg.reindeer) spawnDeer(cfg.reindeer);
   // säilyneet asemat tai kesken jäänyt taistelu
@@ -1674,7 +1706,7 @@ function goSector(id) {
 function showMap() {
   screen = 'map'; running = false;
   mapSel = progress.battle ? progress.battle.id : mostUrgent(); mapTapId = null;
-  setTool(null); select(null); setCondition('clear'); snow.visible = false;
+  setTool(null); select(null); fades = []; setCondition('clear', true);
   if (SECTORS.some(x => levelOf(threatOf(x.id)) === 'red')) sfx('alarm');
   document.body.classList.add('onmap');
   $('mapScreen').hidden = false; $('overlay').hidden = true;
@@ -2427,6 +2459,7 @@ function frame(now) {
   if (screen === 'sector' && running && !paused && !gameOver) for (let k = 0; k < speed; k++) update(dt);
   else if (screen === 'sector' && deer.length && !paused) updateDeer(dt);
   updateHUD(false);
+  if (screen === 'sector' && !paused) envStep(dt);
   if (screen === 'sector' && (now - supportUiT > 250)) { supportUiT = now; updateSupportUI(); }
   if (snow.visible && !paused) { const a = snowGeo.attributes.position.array; for (let k = 1; k < a.length; k += 3) { a[k] -= dt * 2.2; a[k - 1] -= dt * .8; if (a[k] < 0) { a[k] = 9; a[k - 1] = -4 + Math.random() * (W + 8); } } snowGeo.attributes.position.needsUpdate = true; }
   if (screen === 'sector') tutorialTick();

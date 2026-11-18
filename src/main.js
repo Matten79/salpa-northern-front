@@ -2320,14 +2320,14 @@ function setTool(k) {
   if (k && supportMode) { supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false; }
   tool = k; pendingTile = -1; hl.visible = false; ring.visible = ringIn.visible = false;
   for (const [kk, el] of Object.entries(toolEls)) el.classList.toggle('sel', kk === k);
-  if (k === 'demolish') { select(null); $('hint').hidden = false; $('hint').innerHTML = `<span class="hico">${ICONS.demolish}</span><b>${L('Pura', 'Dismantle')}</b> – ${L('napauta omaa asemaa, estettä, miinoitetta tai ajoneuvoa purkaaksesi sen. Saat takaisin 60 % hinnasta (aiemmista taisteluista säilyneistä 30 %).', 'tap your position, obstacle, minefield or vehicle to dismantle it. You get 60 % of the cost back (30 % for positions kept from earlier battles).')}<br><small>${isTouch ? L('Puhelimessa: napauta kahdesti.', 'On a phone: tap twice.') : L('Esc peruu.', 'Esc cancels.')}</small>`; return; }
-  if (k) { select(null); $('hint').hidden = false; $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${dn(DEFS[k])}</b> – ${dd(DEFS[k])}${TOWERS.has(k) ? L(' Tunturilla +1 kantama.', ' +1 range on a fell.') : ''}<br><small>${isTouch ? L('Napauta ruutua, napauta uudelleen rakentaaksesi.', 'Tap a tile, tap again to build.') : L('Klikkaa ruutua rakentaaksesi. Esc peruu.', 'Click a tile to build. Esc cancels.')}</small>`; }
+  if (k === 'demolish') { select(null); $('hint').hidden = false; armBack(); $('hint').innerHTML = `<button class="hintx" id="hintX" aria-label="${L('Peru', 'Cancel')}">✕</button><span class="hico">${ICONS.demolish}</span><b>${L('Pura', 'Dismantle')}</b> – ${L('napauta omaa asemaa, estettä, miinoitetta tai ajoneuvoa purkaaksesi sen. Saat takaisin 60 % hinnasta (aiemmista taisteluista säilyneistä 30 %).', 'tap your position, obstacle, minefield or vehicle to dismantle it. You get 60 % of the cost back (30 % for positions kept from earlier battles).')}<br><small>${isTouch ? L('Puhelimessa: napauta kahdesti.', 'On a phone: tap twice.') : L('Esc peruu.', 'Esc cancels.')}</small>`; return; }
+  if (k) { select(null); $('hint').hidden = false; armBack(); $('hint').innerHTML = `<button class="hintx" id="hintX" aria-label="${L('Peru', 'Cancel')}">✕</button><span class="hico">${ICONS[k]}</span><b>${dn(DEFS[k])}</b> – ${dd(DEFS[k])}${TOWERS.has(k) ? L(' Tunturilla +1 kantama.', ' +1 range on a fell.') : ''}<br><small>${isTouch ? L('Napauta ruutua, napauta uudelleen rakentaaksesi.', 'Tap a tile, tap again to build.') : L('Klikkaa ruutua rakentaaksesi. Esc tai hiiren oikea nappi peruu.', 'Click a tile to build. Esc or right-click cancels.')}</small>`; }
   else $('hint').hidden = true;
 }
 function select(s) {
   selected = s;
   if (!s) { $('panel').hidden = true; if (!tool) { ring.visible = ringIn.visible = false; } return; }
-  setTool(null); refreshPanel();
+  setTool(null); armBack(); refreshPanel();
   if (TOWERS.has(s.kind) || s.mobile) showRange(s.x, s.z, tileTop(s.i), towerRange(s.def, s.lvl, s.i), s.def.minRange);
   else ring.visible = ringIn.visible = false;
 }
@@ -2427,9 +2427,23 @@ $('leaveBtn').onclick = () => {
   else if (!battleResolved && wave === 0) { progress.battle = null; saveProgress(); }
   showMap();
 };
+// peruutus: Esc, hiiren oikea nappi, ohjeen ✕-nappi tai puhelimen takaisin-nappi
+function cancelAll() {
+  const had = !!(tool || selected || supportMode);
+  setTool(null); select(null); if (supportMode) cancelSupport();
+  return had;
+}
+let backArmed = false;
+function armBack() { if (backArmed) return; try { history.pushState({ salpa: 1 }, ''); backArmed = true; } catch (e) { /* */ } }
+addEventListener('popstate', () => {
+  backArmed = false;
+  if (screen === 'sector' && cancelAll()) return;
+});
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#hintX')) { e.preventDefault(); cancelAll(); } });
+renderer.domElement.addEventListener('contextmenu', e => { if (screen === 'sector') { e.preventDefault(); cancelAll(); } });
 addEventListener('keydown', e => {
   if (screen !== 'sector') return;
-  if (e.key === 'Escape') { setTool(null); select(null); if (supportMode) cancelSupport(); }
+  if (e.key === 'Escape') cancelAll();
   if (e.key === 'f' || e.key === 'F') setSupportMode('f35');
   if (e.key === 'h' || e.key === 'H') setSupportMode('himars');
   if (e.key === 'n' || e.key === 'N') setSupportMode('nuke');
@@ -2569,6 +2583,7 @@ const JET_PROTO = (() => {
 function setSupportMode(k) {
   if (screen !== 'sector' || gameOver) return;
   if (supportMode === k) { cancelSupport(); return; }
+  armBack();
   if (phase !== 'wave') { toast(L('Tulitukea voi tilata vain hyökkäyksen aikana.', 'Fire support can only be called during an attack.'), 'warn', 2200); return; }
   if (k === 'iceye') {
     if (progress.support.iceye > 0) { toast(L(`ICEYE: seuraava ylilento ${fmtCd(progress.support.iceye)}.`, `ICEYE: next pass in ${fmtCd(progress.support.iceye)}.`), 'warn', 2200); return; }
@@ -2580,7 +2595,7 @@ function setSupportMode(k) {
   setTool(null); select(null);
   supportMode = k; pendingStrike = -1;
   $('hint').hidden = false;
-  $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${L(SUPPORT[k].name, SUPPORT[k].nameEn || SUPPORT[k].name)}</b> – ${dd(SUPPORT[k])}<br><small>${k === 'nuke' ? L('Napauta kohdetta ja vahvista napauttamalla uudelleen.', 'Tap a target and confirm by tapping again.') : isTouch ? L('Napauta kohdetta, napauta uudelleen vahvistaaksesi.', 'Tap a target, tap again to confirm.') : L('Klikkaa kohdetta. Esc peruu.', 'Click a target. Esc cancels.')}</small>`;
+  $('hint').innerHTML = `<button class="hintx" id="hintX" aria-label="${L('Peru', 'Cancel')}">✕</button><span class="hico">${ICONS[k]}</span><b>${L(SUPPORT[k].name, SUPPORT[k].nameEn || SUPPORT[k].name)}</b> – ${dd(SUPPORT[k])}<br><small>${k === 'nuke' ? L('Napauta kohdetta ja vahvista napauttamalla uudelleen.', 'Tap a target and confirm by tapping again.') : isTouch ? L('Napauta kohdetta, napauta uudelleen vahvistaaksesi.', 'Tap a target, tap again to confirm.') : L('Klikkaa kohdetta. Esc peruu.', 'Click a target. Esc cancels.')}</small>`;
   strikeRingMat.color.setHex(k === 'nuke' ? 0xff3b30 : 0xff7a3c);
   updateSupportUI(true);
 }

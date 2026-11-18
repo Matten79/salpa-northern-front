@@ -70,7 +70,7 @@ const BASEH = [.30, .32, .31, .26, .12, .62, .08];
 const TERRAIN_NAME = ['pelto', 'metsä', 'tie', 'suo', 'järvi', 'tunturi', 'meri'];
 
 // ================= TILA =================
-let cfg = SECTORS[0], PAL = PAL_BASE;
+let cfg = SECTORS[0], PAL = PAL_BASE, battleWaves = 10;
 let screen = 'intro';
 let winter = false, money = 650, lives = 20, wave = 0, phase = 'build', speed = 1;
 let paused = false, gameOver = false, running = false, endless = false;
@@ -83,11 +83,74 @@ let fields = { inf: null, veh: null };
 const terr = new Uint8Array(N);
 const spawns = { veh: [], inf: [] };
 
-// ================= TALLENNUS (kampanjan eteneminen) =================
-const SAVE_KEY = 'salpa.kampanja.v1', OLD_SAVE_KEY = 'rajanpuolustus.kampanja.v1';
-let progress = { done: {}, best: {} };
-try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || localStorage.getItem(OLD_SAVE_KEY)); if (s && s.done) progress = s; } catch (e) { /* ei tallennusta */ }
+// ================= KAMPANJA: SEKTOREIDEN UHKA =================
+// Uhka 0–100 per sektori. ≥ RED = kiireellinen (punainen), ≥ YELLOW = uhka kasvaa (keltainen).
+const SAVE_KEY = 'salpa.kampanja.v2';
+const RED = 75, YELLOW = 40, CAMPAIGN_WEEKS = 12, MAX_RESIL = 5;
+const AGG = { kaakko: 1.25, ekarjala: 1.05, pkarjala: .95, kainuu: .9, koillismaa: .8, ylalappi: .7 };
+let progress = null;
+function newCampaign() {
+  const threat = {};
+  for (const s of SECTORS) threat[s.id] = 10 + Math.round(Math.random() * 25);
+  threat.kaakko = 82;                                   // avaushyökkäys Kaakkois-Suomeen
+  const others = SECTORS.filter(s => s.id !== 'kaakko');
+  threat[others[(Math.random() * others.length) | 0].id] = 50 + Math.round(Math.random() * 15);
+  return { v: 2, week: 1, threat, resil: MAX_RESIL, wins: 0, losses: 0, held: {}, best: {}, report: ['Vihollinen keskittää joukkoja Vaalimaan suunnalle. Puolusta Kaakkois-Suomea!'], over: null, support: { f35: 0, himars: 0 } };
+}
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.v === 2) progress = s; } catch (e) { /* ei tallennusta */ }
+if (!progress) progress = newCampaign();
 function saveProgress() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(progress)); } catch (e) { /* ohitetaan */ } }
+const threatOf = id => progress.threat[id] || 0;
+const levelOf = t => t >= RED ? 'red' : t >= YELLOW ? 'yellow' : 'calm';
+const LEVEL = {
+  red:    { col: '#e5383b', label: 'KIIREELLINEN', text: 'Suurhyökkäys käynnissä', badge: '!!' },
+  yellow: { col: '#ffc531', label: 'Uhka kasvaa', text: 'Vihollinen tunnustelee rajaa', badge: '!' },
+  calm:   { col: '#9aa7b2', label: 'Rauhallinen', text: 'Ei välitöntä uhkaa', badge: '' },
+};
+const wavesFor = (s, t) => t >= RED ? s.waves : 6;
+let battleResolved = false;
+// Taistelun tulos -> viikko kuluu, muiden sektoreiden uhka kasvaa
+function resolveBattle(id, win) {
+  if (battleResolved || progress.over) return;
+  battleResolved = true;
+  const s = SECTORS.find(x => x.id === id);
+  const rep = [];
+  if (win) {
+    progress.wins++; progress.held[id] = (progress.held[id] || 0) + 1;
+    progress.threat[id] = Math.round(Math.random() * 10);
+    rep.push(`✓ ${s.name}: hyökkäys torjuttu. Sektori rauhoittui.`);
+  } else {
+    progress.losses++; progress.resil--;
+    progress.threat[id] = 85;
+    rep.push(`✗ ${s.name}: puolustus murtui (kestävyys −1). Vihollinen jatkaa painostusta.`);
+  }
+  for (const o of SECTORS) {
+    if (o.id === id) continue;
+    const before = threatOf(o.id);
+    if (before >= RED) {
+      progress.resil--;
+      rep.push(`⚠ ${o.name}: hyökkäykseen ei vastattu – vihollinen eteni (kestävyys −1).`);
+    }
+    const inc = Math.round((5 + Math.random() * 12) * (AGG[o.id] || 1) * (1 + progress.week * .05));
+    const after = Math.min(100, before + inc);
+    progress.threat[o.id] = after;
+    if (levelOf(before) !== levelOf(after)) {
+      if (levelOf(after) === 'red') rep.push(`🔴 ${o.name}: hyökkäys alkaa – KIIREELLINEN!`);
+      else if (levelOf(after) === 'yellow') rep.push(`🟡 ${o.name}: vihollisen toiminta lisääntyy.`);
+    }
+  }
+  // aina vähintään yksi uhattu sektori
+  if (!SECTORS.some(o => threatOf(o.id) >= YELLOW)) {
+    const o = SECTORS.filter(x => x.id !== id).sort((a, b) => threatOf(b.id) - threatOf(a.id))[0];
+    progress.threat[o.id] = YELLOW + 5; rep.push(`🟡 ${o.name}: vihollisen toiminta lisääntyy.`);
+  }
+  progress.resil = Math.max(0, progress.resil);
+  progress.week++;
+  if (progress.resil <= 0) { progress.over = 'lost'; rep.push('Valtakunnan puolustuskestävyys loppui.'); }
+  else if (progress.week > CAMPAIGN_WEEKS) { progress.over = 'won'; rep.push('Talvi on ohi – itäraja piti!'); }
+  progress.report = rep;
+  saveProgress();
+}
 
 // ================= SEKTORIN MAASTON LUONTI =================
 function genSector(c) {
@@ -985,7 +1048,7 @@ function endWave() {
   const bonus = 80 + 15 * wave; money += bonus;
   progress.best[cfg.id] = Math.max(progress.best[cfg.id] || 0, wave); saveProgress();
   toast(`Aalto ${wave} torjuttu! +${bonus} €`, 'ok');
-  if (wave === cfg.waves && !endless) { endGame(true); }
+  if (wave === battleWaves && !endless) { endGame(true); }
   const w = seasonOf(wave + 1);
   if (w !== winter) setWinter(w, true);
   preview.visible = true; updateHUD(true);
@@ -1002,14 +1065,14 @@ function setWinter(w, announce) {
 }
 function endGame(win) {
   gameOver = true; const o = $('overlay'); o.hidden = false;
-  if (win) { progress.done[cfg.id] = true; saveProgress(); }
-  const doneCount = SECTORS.filter(s => progress.done[s.id]).length;
+  const first = !battleResolved;
+  resolveBattle(cfg.id, win);
+  const rep = first ? `<ul class="report">${progress.report.map(r => `<li>${r}</li>`).join('')}</ul>` : '';
   o.querySelector('.box').innerHTML = win
-    ? `<h2>🇫🇮 ${cfg.name} pitää!</h2><p>Torjuit kaikki ${cfg.waves} aaltoa. ${cfg.city} on turvassa. Puolustuskykyä jäljellä ${lives}/20.</p><p>Puolustettuja sektoreita: <b>${doneCount}/${SECTORS.length}</b>${doneCount === SECTORS.length ? ' – <b>koko itäraja pitää!</b>' : ''}</p><div class="row2"><button class="primary" id="mapBtn2">🗺 Takaisin kartalle</button><button id="contBtn">Jatka loputtomasti</button></div>`
-    : `<h2>Puolustus murtui</h2><p>Kestit ${wave - 1} aaltoa. Vihollinen pääsi ${cfg.cityIn}.</p><div class="row2"><button class="primary" id="againBtn">Yritä uudelleen</button><button id="mapBtn2">🗺 Kartalle</button></div>`;
+    ? `<h2>🇫🇮 ${cfg.name} pitää!</h2><p>Torjuit kaikki ${battleWaves} aaltoa. ${cfg.city} on turvassa. Puolustuskykyä jäljellä ${lives}/20.</p><h3>Tilannekatsaus</h3>${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 Takaisin kartalle</button>${first ? '<button id="contBtn">Jatka loputtomasti</button>' : ''}</div>`
+    : `<h2>Puolustus murtui</h2><p>Kestit ${Math.max(0, wave - 1)} aaltoa. Vihollinen pääsi ${cfg.cityIn}.</p><h3>Tilannekatsaus</h3>${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 Takaisin kartalle</button></div>`;
   $('mapBtn2').onclick = () => { o.hidden = true; showMap(); };
-  if (win) $('contBtn').onclick = () => { endless = true; gameOver = false; o.hidden = true; };
-  else $('againBtn').onclick = () => { o.hidden = true; loadSector(cfg.id); };
+  if (win && first) $('contBtn').onclick = () => { endless = true; gameOver = false; o.hidden = true; };
 }
 
 // ================= REITTIESIKATSELU =================
@@ -1042,8 +1105,10 @@ function updatePreview() {
 // ================= SEKTORIN LATAUS =================
 function loadSector(id) {
   cfg = SECTORS.find(s => s.id === id) || SECTORS[0];
+  battleWaves = wavesFor(cfg, threatOf(cfg.id)); battleResolved = false;
   scene.remove(world); world = new THREE.Group(); scene.add(world);
   structs.clear(); rubble.clear();
+  strikes = []; supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
   enemies = []; projectiles = []; effects = []; barrages = []; queue = []; barrageTimes = []; deer = []; shockwaves = [];
   money = cfg.money; lives = 20; wave = 0; phase = 'build'; speed = 1; paused = false; gameOver = false; endless = false;
   tool = null; selected = null; pendingTile = -1; barrageWarned = false; deerWarned = false; leaveArmed = 0;
@@ -1065,7 +1130,7 @@ function loadSector(id) {
   $('mapScreen').hidden = true;
   $('sectorName').textContent = cfg.name;
   updateHUD(true);
-  toast(`${cfg.name}: puolusta ${cfg.cityTo} – ${cfg.waves} aaltoa.`, 'info', 4000);
+  toast(`${cfg.name}: puolusta ${cfg.cityTo} – ${battleWaves} aaltoa${battleWaves === cfg.waves ? ' (suurhyökkäys)' : ' (tunnusteluisku)'}.`, 'info', 4000);
 }
 
 // ================= STRATEGINEN KARTTA =================
@@ -1085,12 +1150,14 @@ function clipBorder(lat0, lat1) {
   const last = BORDER_LINE[BORDER_LINE.length - 1]; if (last[1] >= lat0 && last[1] <= lat1) out.push(last);
   return out;
 }
-let mapSel = SECTORS[0].id;
+let mapSel = SECTORS[0].id, resetArmed = 0;
+function mostUrgent() { return [...SECTORS].sort((a, b) => threatOf(b.id) - threatOf(a.id))[0].id; }
 function buildMap() {
   const svg = $('mapSvg');
-  const [ex] = proj(33.5, 60);
   const rus = [...BORDER_LINE, [33.5, BORDER_LINE[BORDER_LINE.length - 1][1]], [33.5, 59.8], [BORDER_LINE[0][0], 59.8]];
-  let h = `<defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><line x1="0" y1="0" x2="0" y2="8" stroke="#ffffff" stroke-opacity=".06" stroke-width="3"/></pattern></defs>`;
+  let h = `<defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><line x1="0" y1="0" x2="0" y2="8" stroke="#ffffff" stroke-opacity=".06" stroke-width="3"/></pattern>
+    <marker id="arrR" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e5383b"/></marker>
+    <marker id="arrY" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ffc531"/></marker></defs>`;
   h += `<polygon points="${pstr(rus)}" fill="#2a3036"/><polygon points="${pstr(rus)}" fill="url(#hatch)"/>`;
   h += `<polygon points="${pstr(FIN_OUTLINE)}" fill="#46613f" stroke="#dfe7ea" stroke-width="1.5" stroke-linejoin="round"/>`;
   const [rx, ry] = proj(32.4, 65.6);
@@ -1104,51 +1171,72 @@ function buildMap() {
   }
   for (const s of SECTORS) {
     const pts = clipBorder(s.lat[0], s.lat[1]);
-    const done = !!progress.done[s.id], sel = s.id === mapSel;
-    const col = sel ? '#ffb347' : done ? '#4da3ff' : '#aab4bd';
-    if (sel) {
+    const lv = levelOf(threatOf(s.id)), L = LEVEL[lv], sel = s.id === mapSel;
+    if (lv !== 'calm') {
       const [ax, ay] = proj(...s.crossing), [bx, by] = proj(...s.target);
-      h += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#ffb347" stroke-width="2.5" stroke-dasharray="6 5" marker-end=""/>`;
-      h += `<circle cx="${bx}" cy="${by}" r="6" fill="none" stroke="#ffb347" stroke-width="2"/>`;
+      const mx = ax + (bx - ax) * .8, my = ay + (by - ay) * .8;
+      h += `<line x1="${ax + 6}" y1="${ay}" x2="${mx}" y2="${my}" stroke="${L.col}" stroke-width="${lv === 'red' ? 3.5 : 2.2}" stroke-dasharray="${lv === 'red' ? '7 4' : '4 5'}" marker-end="url(#${lv === 'red' ? 'arrR' : 'arrY'})" class="${lv === 'red' ? 'pulse' : ''}"/>`;
     }
-    h += `<polyline points="${pstr(pts)}" fill="none" stroke="${col}" stroke-width="${sel ? 10 : 7}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if (sel) h += `<polyline points="${pstr(pts)}" fill="none" stroke="#ffffff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".9"/>`;
+    h += `<polyline points="${pstr(pts)}" fill="none" stroke="${L.col}" stroke-width="${sel ? 9 : 7}" stroke-linecap="round" stroke-linejoin="round" class="${lv === 'red' ? 'pulse' : ''}"/>`;
     h += `<polyline points="${pstr(pts)}" fill="none" stroke="transparent" stroke-width="34" class="hit" data-id="${s.id}"/>`;
     const [mx, my] = proj(...s.crossing);
-    h += `<g class="hit" data-id="${s.id}"><circle cx="${mx + 16}" cy="${my}" r="11" fill="${col}" stroke="#0d141b" stroke-width="2"/>`;
-    h += `<text x="${mx + 16}" y="${my + 4.5}" text-anchor="middle" class="num">${done ? '✓' : s.no}</text>`;
+    h += `<g class="hit" data-id="${s.id}"><circle cx="${mx + 16}" cy="${my}" r="${sel ? 13 : 11}" fill="${L.col}" stroke="${sel ? '#fff' : '#0d141b'}" stroke-width="2"/>`;
+    h += `<text x="${mx + 16}" y="${my + 4.5}" text-anchor="middle" class="num">${L.badge || s.no}</text>`;
     h += `<text x="${mx + 32}" y="${my + 4}" class="mlabel sec">${s.short}</text></g>`;
   }
   svg.innerHTML = h;
   svg.querySelectorAll('.hit').forEach(el => el.addEventListener('click', () => { mapSel = el.dataset.id; buildMap(); renderBrief(); }));
 }
-function seasonRange(arr) {
-  if (!arr.length) return 'ei talvea';
-  return `aallot ${arr[0]}–${arr[arr.length - 1]}`;
+function seasonRange(arr, n) {
+  const w = arr.filter(x => x <= n);
+  if (!w.length) return 'ei talvea';
+  return `aallot ${w[0]}–${w[w.length - 1]}`;
 }
 function renderBrief() {
+  const p = progress;
+  if (p.over) {
+    $('brief').innerHTML = `<div class="prog"><b class="brand">SALPA</b> · Kampanja päättyi</div>
+      <h2>${p.over === 'won' ? '🇫🇮 Itäraja piti!' : 'Puolustus romahti'}</h2>
+      <p>${p.over === 'won' ? `Kestit ${CAMPAIGN_WEEKS} viikkoa. Torjuttuja hyökkäyksiä ${p.wins}, menetettyjä taisteluita ${p.losses}.` : `Valtakunnan puolustuskestävyys loppui viikolla ${p.week - 1}. Torjuttuja hyökkäyksiä ${p.wins}.`}</p>
+      <ul class="report">${p.report.map(r => `<li>${r}</li>`).join('')}</ul>
+      <button class="primary big" id="newCampBtn">Uusi kampanja ▶</button>`;
+    $('newCampBtn').onclick = () => { progress = newCampaign(); saveProgress(); mapSel = mostUrgent(); buildMap(); renderBrief(); };
+    return;
+  }
   const s = SECTORS.find(x => x.id === mapSel);
-  const done = !!progress.done[s.id], best = progress.best[s.id] || 0;
-  const doneCount = SECTORS.filter(x => progress.done[x.id]).length;
+  const t = threatOf(s.id), lv = levelOf(t), L = LEVEL[lv], waves = wavesFor(s, t);
+  const reds = SECTORS.filter(x => levelOf(threatOf(x.id)) === 'red').length;
+  const hearts = '♥'.repeat(p.resil) + '♡'.repeat(MAX_RESIL - p.resil);
   $('brief').innerHTML = `
-    <div class="prog"><b class="brand">SALPA</b> · Puolustettu <b>${doneCount}/${SECTORS.length}</b> sektoria${doneCount === SECTORS.length ? ' – koko itäraja pitää! 🇫🇮' : ''}</div>
-    <h2><span class="no">${s.no}</span> ${s.name}</h2>
+    <div class="prog"><b class="brand">SALPA</b> · Viikko <b>${p.week}/${CAMPAIGN_WEEKS}</b> · Kestävyys <span class="hearts">${hearts}</span></div>
+    ${p.report.length ? `<div class="sitrep"><b>Tilannekatsaus</b><ul class="report">${p.report.map(r => `<li>${r}</li>`).join('')}</ul></div>` : ''}
+    <h2><span class="no" style="background:${L.col}">${L.badge || s.no}</span> ${s.name}</h2>
     <div class="sub">${s.area} · puolustettava: <b>${s.city}</b></div>
+    <div class="threat ${lv}"><div class="tl"><b>${L.label}</b><span>${L.text}</span></div>
+      <div class="bar"><i style="width:${t}%;background:${L.col}"></i></div></div>
     <p>${s.desc}</p>
     <ul class="facts">${s.facts.map(f => `<li>${f}</li>`).join('')}
-      <li>❄️ Talvi: ${seasonRange(s.winter)}</li>
+      <li>❄️ Talvi: ${seasonRange(s.winter, waves)}</li>
       ${s.reindeer ? `<li>🦌 Poroja maastossa – ne hidastavat vihollisen ajoneuvoja</li>` : ''}
     </ul>
-    <div class="row"><span>Tila</span><b>${done ? '✓ Puolustettu' : best ? `Paras: aalto ${best}/${s.waves}` : 'Ei vielä puolustettu'}</b></div>
-    <div class="row"><span>Aaltoja</span><b>${s.waves}</b></div>
+    <div class="row"><span>Taistelu</span><b>${lv === 'calm' ? '–' : `${waves} aaltoa${lv === 'red' ? ' (suurhyökkäys)' : ' (tunnusteluisku)'}`}</b></div>
     <div class="row"><span>Aloitusbudjetti</span><b>${s.money} €</b></div>
-    <button class="primary big" id="goBtn">Puolusta sektoria ▶</button>
-    <div class="secList">${SECTORS.map(x => `<button data-id="${x.id}" class="${x.id === mapSel ? 'sel' : ''}">${progress.done[x.id] ? '✓' : x.no} ${x.short}</button>`).join('')}</div>`;
-  $('goBtn').onclick = () => loadSector(s.id);
+    <div class="row"><span>Torjuttu täällä</span><b>${p.held[s.id] || 0}×</b></div>
+    <button class="primary big" id="goBtn" ${lv === 'calm' ? 'disabled' : ''}>${lv === 'calm' ? 'Ei hyökkäystä – valitse uhattu sektori' : 'Puolusta sektoria ▶'}</button>
+    ${reds > 1 ? `<p class="warn">⚠ ${reds} sektoria on kiireellisiä. Jokainen viikko, jonka kiireellinen sektori jää ilman puolustusta, vie kestävyyttä.</p>` : reds === 1 && lv !== 'red' ? `<p class="warn">⚠ Kiireellinen sektori jää ilman puolustusta, jos taistelet täällä – kestävyys −1.</p>` : ''}
+    <div class="secList">${SECTORS.map(x => { const l = levelOf(threatOf(x.id)); return `<button data-id="${x.id}" class="${x.id === mapSel ? 'sel' : ''} lv-${l}"><i style="background:${LEVEL[l].col}"></i>${LEVEL[l].badge ? LEVEL[l].badge + ' ' : ''}${x.short}</button>`; }).join('')}</div>
+    <button class="ghost" id="resetCampBtn">Aloita kampanja alusta</button>`;
+  $('goBtn').onclick = () => { if (lv !== 'calm') loadSector(s.id); };
   $('brief').querySelectorAll('.secList button').forEach(b => b.onclick = () => { mapSel = b.dataset.id; buildMap(); renderBrief(); });
+  $('resetCampBtn').onclick = () => {
+    if (performance.now() - resetArmed > 3000) { resetArmed = performance.now(); $('resetCampBtn').textContent = 'Varmasti? Napauta uudelleen'; return; }
+    progress = newCampaign(); saveProgress(); mapSel = mostUrgent(); buildMap(); renderBrief();
+  };
 }
 function showMap() {
   screen = 'map'; running = false;
-  if (!progress.done[mapSel]) { } else { const nxt = SECTORS.find(s => !progress.done[s.id]); if (nxt) mapSel = nxt.id; }
+  mapSel = mostUrgent();
   setTool(null); select(null);
   document.body.classList.add('onmap');
   $('mapScreen').hidden = false; $('overlay').hidden = true;
@@ -1170,6 +1258,7 @@ for (const [k, d] of Object.entries(DEFS)) {
   $('tools').appendChild(b); toolEls[k] = b;
 }
 function setTool(k) {
+  if (k && supportMode) { supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false; }
   tool = k; pendingTile = -1; hl.visible = false; ring.visible = ringIn.visible = false;
   for (const [kk, el] of Object.entries(toolEls)) el.classList.toggle('sel', kk === k);
   if (k) { select(null); $('hint').hidden = false; $('hint').innerHTML = `<b>${DEFS[k].name}</b> – ${DEFS[k].desc}${TOWERS.has(k) ? ' Tunturilla +1 kantama.' : ''}<br><small>${isTouch ? 'Napauta ruutua, napauta uudelleen rakentaaksesi.' : 'Klikkaa ruutua rakentaaksesi. Esc peruu.'}</small>`; }
@@ -1233,7 +1322,7 @@ function updateHUD(force) {
   if (!force && key === lastHud) return;
   const moneyChanged = !lastHud.startsWith(money + '|'); lastHud = key;
   $('money').textContent = money; $('lives').textContent = lives;
-  $('wave').textContent = `${wave}/${cfg.waves}`;
+  $('wave').textContent = `${wave}/${battleWaves}`;
   $('season').textContent = winter ? '❄️ Talvi' : '☀️ Sula maa';
   $('speedBtn').textContent = speed + '×'; $('pauseBtn').textContent = paused ? '▶' : '⏸';
   const wb = $('waveBtn'); wb.disabled = phase !== 'build';
@@ -1254,15 +1343,18 @@ $('speedBtn').onclick = () => { speed = speed === 3 ? 1 : speed + 1; updateHUD(t
 $('pauseBtn').onclick = () => { paused = !paused; updateHUD(true); };
 $('camBtn').onclick = resetCamera;
 $('leaveBtn').onclick = () => {
-  const busy = phase === 'wave' || structs.size > 0;
-  if (busy && !gameOver && performance.now() - leaveArmed > 3000) {
-    leaveArmed = performance.now(); toast('Napauta 🗺 uudelleen poistuaksesi – sektorin tilanne menetetään.', 'warn', 3000); return;
+  const fighting = !gameOver && !battleResolved && wave > 0;
+  if (fighting && performance.now() - leaveArmed > 3000) {
+    leaveArmed = performance.now(); toast('Vetäytyminen lasketaan tappioksi (kestävyys −1). Napauta 🗺 uudelleen vetäytyäksesi.', 'warn', 3500); return;
   }
+  if (fighting) resolveBattle(cfg.id, false);
   showMap();
 };
 addEventListener('keydown', e => {
   if (screen !== 'sector') return;
-  if (e.key === 'Escape') { setTool(null); select(null); }
+  if (e.key === 'Escape') { setTool(null); select(null); if (supportMode) cancelSupport(); }
+  if (e.key === 'f' || e.key === 'F') setSupportMode('f35');
+  if (e.key === 'h' || e.key === 'H') setSupportMode('himars');
   if (e.key === ' ') { e.preventDefault(); phase === 'build' ? startWave() : (paused = !paused, updateHUD(true)); }
   const n = parseInt(e.key); if (n >= 1 && n <= 6) setTool(Object.keys(DEFS)[n - 1]);
 });
@@ -1290,12 +1382,21 @@ function previewTile(i) {
 }
 let down = null;
 renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; isTouch = e.pointerType === 'touch'; });
-renderer.domElement.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' && tool && !down) previewTile(tileAt(e.clientX, e.clientY)); });
+renderer.domElement.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse' || down) return;
+  if (supportMode) previewStrike(tileAt(e.clientX, e.clientY));
+  else if (tool) previewTile(tileAt(e.clientX, e.clientY));
+});
 renderer.domElement.addEventListener('pointerup', e => {
   if (!down) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dtm = performance.now() - down.t; down = null;
   if (moved > 8 || dtm > 600 || screen !== 'sector' || gameOver) return;
   const i = tileAt(e.clientX, e.clientY);
+  if (supportMode) {
+    if (i < 0) { toast('Valitse kohde kartalta.', 'warn', 1500); return; }
+    if (isTouch && pendingStrike !== i) { pendingStrike = i; previewStrike(i); return; }
+    callStrike(supportMode, i); return;
+  }
   if (tool) {
     if (isTouch && pendingTile !== i) { pendingTile = i; const err = previewTile(i); if (err && i >= 0) toast(err, 'warn', 1800); return; }
     const err = i < 0 ? 'Kartan ulkopuolella' : canPlace(tool, i);
@@ -1327,6 +1428,159 @@ function coverKey(e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefaul
 $('cover').addEventListener('click', closeCover);
 addEventListener('keydown', coverKey);
 
+// ================= TULITUKI: F-35 JA HIMARS =================
+const SUPPORT = {
+  f35:    { name: 'F-35', icon: '✈️', cd: 600, radius: 3.5, key: 'f', desc: 'Hävittäjän täsmäisku: ohjautuvat pommit kohdealueen raskaimpiin ajoneuvoihin ja lennokkien alasampuminen.' },
+  himars: { name: 'HIMARS', icon: '🚀', cd: 600, radius: 1.8, key: 'h', desc: 'Raketinheitin: kahdeksan raketin aluetuli. Tuhoaa maalla kaiken kohdealueella.' },
+};
+if (!progress.support) progress.support = { f35: 0, himars: 0 };
+let supportMode = null, pendingStrike = -1, strikes = [], supportUiT = 0;
+const strikeRingMat = new THREE.MeshBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
+const strikeRing = new THREE.Mesh(new THREE.RingGeometry(.93, 1, 56).rotateX(-Math.PI / 2), strikeRingMat);
+const strikeDisk = new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: .16, depthWrite: false }));
+strikeRing.visible = strikeDisk.visible = false; strikeRing.renderOrder = strikeDisk.renderOrder = 7; scene.add(strikeRing, strikeDisk);
+const groundY = (x, z) => (x >= 0 && z >= 0 && x < W && z < H) ? tileTop(idx(Math.floor(x), Math.floor(z))) : .3;
+// F-35 malli
+const JET_PROTO = (() => {
+  const g = new THREE.Group(), mJet = M(0x66737b), mDark = M(0x3b444a);
+  g.add(mesh(new THREE.BoxGeometry(.9, .11, .15), mJet, 0, 0, 0));
+  const nose = mesh(new THREE.ConeGeometry(.075, .28, 4).rotateZ(-Math.PI / 2).rotateX(Math.PI / 4), mJet, .58, 0, 0); g.add(nose);
+  g.add(mesh(new THREE.BoxGeometry(.18, .06, .1), M(0x9fb6c2), .3, .07, 0));
+  const wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute([.22, 0, 0, -.34, 0, .52, -.4, 0, 0, .22, 0, 0, -.4, 0, 0, -.34, 0, -.52], 3));
+  wg.computeVertexNormals();
+  g.add(mesh(wg, new THREE.MeshLambertMaterial({ color: 0x5c686f, flatShading: true, side: THREE.DoubleSide }), 0, -.01, 0));
+  for (const s of [-1, 1]) {
+    const t = mesh(new THREE.BoxGeometry(.16, .16, .02), mDark, -.36, .1, s * .08); t.rotation.x = s * .4; g.add(t);
+    g.add(mesh(new THREE.BoxGeometry(.12, .015, .14), mJet, -.42, 0, s * .12));
+  }
+  g.add(mesh(new THREE.SphereGeometry(.05, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffa040 }), -.47, 0, 0, false));
+  g.scale.setScalar(1.25);
+  return g;
+})();
+function setSupportMode(k) {
+  if (screen !== 'sector' || gameOver) return;
+  if (supportMode === k) { cancelSupport(); return; }
+  if (phase !== 'wave') { toast('Tulitukea voi tilata vain hyökkäyksen aikana.', 'warn', 2200); return; }
+  if (progress.support[k] > 0) { toast(`${SUPPORT[k].name} latautuu vielä ${fmtCd(progress.support[k])}.`, 'warn', 2200); return; }
+  setTool(null); select(null);
+  supportMode = k; pendingStrike = -1;
+  $('hint').hidden = false;
+  $('hint').innerHTML = `<b>${SUPPORT[k].icon} ${SUPPORT[k].name}</b> – ${SUPPORT[k].desc}<br><small>${isTouch ? 'Napauta kohdetta, napauta uudelleen vahvistaaksesi.' : 'Klikkaa kohdetta. Esc peruu.'}</small>`;
+  updateSupportUI(true);
+}
+function cancelSupport() {
+  supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
+  if (!tool) $('hint').hidden = true;
+  updateSupportUI(true);
+}
+function previewStrike(i) {
+  if (i < 0 || !supportMode) { strikeRing.visible = strikeDisk.visible = false; return; }
+  const r = SUPPORT[supportMode].radius, x = ix(i) + .5, z = iz(i) + .5, y = tileTop(i) + .07;
+  for (const m of [strikeRing, strikeDisk]) { m.visible = true; m.position.set(x, y, z); m.scale.setScalar(r); }
+}
+function fmtCd(s) { s = Math.ceil(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+function callStrike(k, i) {
+  const x = ix(i) + .5, z = iz(i) + .5;
+  progress.support[k] = SUPPORT[k].cd; saveProgress();
+  cancelSupport();
+  if (k === 'himars') {
+    toast('🚀 HIMARS: tulitehtävä vahvistettu – raketit matkalla!', 'ok', 2500);
+    for (let n = 0; n < 8; n++) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 1.5;
+      const tx = x + Math.cos(a) * r, tz = z + Math.sin(a) * r;
+      const m = mesh(new THREE.CylinderGeometry(.035, .035, .32, 5).rotateZ(Math.PI / 2), MAT.white, -6, .6, z, false);
+      m.visible = false; world.add(m);
+      strikes.push({ kind: 'rocket', mesh: m, from: V(-6, .6, clamp(z + (n - 2.5) * .15, 0, H)), to: V(tx, groundY(tx, tz), tz), t: -n * .14, T: 1.6, h: 5.5, puffT: 0 });
+    }
+  } else {
+    toast('✈️ F-35: täsmäisku tulossa!', 'ok', 2500);
+    const m = JET_PROTO.clone(); m.position.set(-10, 3, z); world.add(m);
+    strikes.push({ kind: 'jet', mesh: m, x: -10, z, y: 3, tx: x, tz: z, dropped: false });
+  }
+  updateSupportUI(true);
+}
+function updateStrikes(dt) {
+  for (const s of strikes) {
+    if (s.kind === 'rocket') {
+      s.t += dt; if (s.t < 0) continue;
+      s.mesh.visible = true;
+      const k = Math.min(1, s.t / s.T);
+      const prev = s.mesh.position.clone();
+      s.mesh.position.lerpVectors(s.from, s.to, k); s.mesh.position.y += Math.sin(Math.PI * k) * s.h;
+      const dir = s.mesh.position.clone().sub(prev);
+      if (dir.lengthSq() > 1e-8) s.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.normalize());
+      s.puffT -= dt; if (s.puffT <= 0) { puff(s.mesh.position); s.puffT = .03; }
+      if (k >= 1) {
+        s.done = true; world.remove(s.mesh); s.mesh.geometry.dispose();
+        boom(s.to.x, s.to.y + .15, s.to.z, 1.1, 0xffb040);
+        for (const e of enemies) {
+          if (e.dead || e.cls === 'air') continue;
+          const d = Math.hypot(e.x - s.to.x, e.z - s.to.z);
+          if (d < 1.4) hurt(e, 260 * (1 - d / 1.4 * .4), [1, 1, .85, 0]);
+        }
+      }
+    } else if (s.kind === 'jet') {
+      s.x += 13 * dt;
+      s.mesh.position.set(s.x, s.y + Math.sin(s.x * .3) * .05, s.z);
+      s.mesh.rotation.x = Math.sin(s.x * .25) * .12;
+      if (!s.dropped && s.x >= s.tx - 3.2) {
+        s.dropped = true;
+        // ilmatorjunta: lennokit alas
+        for (const e of enemies) if (!e.dead && e.cls === 'air' && Math.hypot(e.x - s.tx, e.z - s.tz) < 4.5) {
+          tracer(V(s.x, s.y, s.z), V(e.x, e.y, e.z), 0xbfe6ff, .25); hurt(e, 9999, [0, 0, 0, 1]);
+        }
+        // täsmäpommit raskaimpiin maalikohteisiin
+        const tg = enemies.filter(e => !e.dead && e.cls !== 'air' && Math.hypot(e.x - s.tx, e.z - s.tz) < SUPPORT.f35.radius)
+          .sort((a, b) => (b.armor - a.armor) || (b.hp - a.hp)).slice(0, 4);
+        const aims = tg.length ? tg : [null];
+        aims.forEach((e, n) => {
+          const m = mesh(new THREE.CylinderGeometry(.03, .03, .2, 5).rotateZ(Math.PI / 2), MAT.dark, s.x, s.y - .1, s.z + (n - 1.5) * .1, false);
+          world.add(m);
+          strikes.push({ kind: 'bomb', mesh: m, from: V(s.x, s.y - .1, s.z), target: e, last: e ? V(e.x, e.y, e.z) : V(s.tx, groundY(s.tx, s.tz), s.tz), t: -n * .12, T: 1.0 });
+        });
+      }
+      if (s.x > W + 10) { s.done = true; world.remove(s.mesh); }
+    } else if (s.kind === 'bomb') {
+      s.t += dt; if (s.t < 0) { s.mesh.position.x += 13 * dt; s.from.x += 13 * dt; continue; }
+      if (s.target && !s.target.dead) s.last.set(s.target.x, s.target.y, s.target.z);
+      const k = Math.min(1, s.t / s.T);
+      s.mesh.position.lerpVectors(s.from, s.last, k * k);
+      s.mesh.rotation.z = -k * 1.2;
+      if (k >= 1) {
+        s.done = true; world.remove(s.mesh); s.mesh.geometry.dispose();
+        boom(s.last.x, s.last.y + .15, s.last.z, 1.0, 0xffc060);
+        if (s.target) hurt(s.target, 700, [.6, 1, 1, 0]);
+        for (const e of enemies) {
+          if (e.dead || e.cls === 'air' || e === s.target) continue;
+          if (Math.hypot(e.x - s.last.x, e.z - s.last.z) < .8) hurt(e, 160, [1, .8, .5, 0]);
+        }
+      }
+    }
+  }
+  strikes = strikes.filter(s => !s.done);
+}
+function tickSupport(dt) {
+  for (const k in SUPPORT) if (progress.support[k] > 0) progress.support[k] = Math.max(0, progress.support[k] - dt);
+}
+const supEls = {};
+for (const [k, d] of Object.entries(SUPPORT)) {
+  const b = document.createElement('button'); b.className = 'sup';
+  b.innerHTML = `<span class="ic">${d.icon}</span><span class="nm">${d.name}</span><span class="st"></span><i class="fill"></i>`;
+  b.onclick = () => setSupportMode(k);
+  $('support').appendChild(b); supEls[k] = b;
+}
+function updateSupportUI(force) {
+  for (const [k, b] of Object.entries(supEls)) {
+    const cd = progress.support[k] || 0, ready = cd <= 0;
+    b.classList.toggle('ready', ready && phase === 'wave');
+    b.classList.toggle('armed', supportMode === k);
+    b.classList.toggle('cooling', !ready);
+    b.querySelector('.st').textContent = supportMode === k ? 'VALITSE KOHDE' : ready ? (phase === 'wave' ? 'VALMIS' : 'valmiina') : fmtCd(cd);
+    b.querySelector('.fill').style.width = ready ? '100%' : `${(1 - cd / SUPPORT[k].cd) * 100}%`;
+  }
+}
+
 // ================= PÄÄSILMUKKA =================
 function update(dt) {
   if (phase === 'wave') {
@@ -1341,6 +1595,8 @@ function update(dt) {
   updateBarrages(dt);
   updateEffects(dt);
   if (deer.length) updateDeer(dt);
+  updateStrikes(dt);
+  if (phase === 'wave') tickSupport(dt);
   enemies = enemies.filter(e => !e.dead);
   if (phase === 'wave' && !queue.length && !enemies.length && !barrages.length && !gameOver) endWave();
 }
@@ -1358,6 +1614,7 @@ function frame(now) {
   if (screen === 'sector' && running && !paused && !gameOver) for (let k = 0; k < speed; k++) update(dt);
   else if (screen === 'sector' && deer.length && !paused) updateDeer(dt);
   updateHUD(false);
+  if (screen === 'sector' && (now - supportUiT > 250)) { supportUiT = now; updateSupportUI(); }
   const t = controls.target, cx = clamp(t.x, -4, W + 1), cz = clamp(t.z, -1, H + 1);
   camera.position.x += cx - t.x; camera.position.z += cz - t.z; t.x = cx; t.z = cz;
   controls.update();

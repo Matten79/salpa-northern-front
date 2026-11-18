@@ -690,6 +690,29 @@ const MARK_GEO = mergeGeometries([
   coloredGeo(new THREE.ConeGeometry(.026, .03, 6).translate(0, .215, 0), 0xf4f6f8),
 ]);
 const BORDER_LINE_MAT = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .3, depthWrite: false });
+// --- tiemerkinnät: keltainen keskiviiva (katkoviiva) kuten Suomen teillä
+const LINE_MAT = new THREE.MeshLambertMaterial({ color: 0xf2c230 });
+const dashGeo = new THREE.PlaneGeometry(.2, .035).rotateX(-Math.PI / 2);
+function buildRoadLines() {
+  const mats = [];
+  const add = (x, y, z, horiz) => { dummy.position.set(x, y, z); dummy.rotation.set(0, horiz ? 0 : Math.PI / 2, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); mats.push(dummy.matrix.clone()); };
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = idx(x, z); if (terr[i] !== ROAD) continue;
+    const y = tileTop(i) + .006, cx = x + .5, cz = z + .5;
+    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => {
+      const nx = x + dx, nz = z + dz;
+      if (nx < 0 || nx >= W) return nz >= 0 && nz < H && (dx === -1 ? x === 0 : x === W - 1);   // tie jatkuu kartan reunan yli
+      if (nz < 0 || nz >= H) return false;
+      return terr[idx(nx, nz)] === ROAD;
+    });
+    for (const [dx, dz] of nb) add(cx + dx * .25, y, cz + dz * .25, dx !== 0);
+  }
+  if (!mats.length) return;
+  const im = new THREE.InstancedMesh(dashGeo, LINE_MAT, mats.length);
+  mats.forEach((m, k) => im.setMatrixAt(k, m)); im.receiveShadow = true;
+  dummy.rotation.set(0, 0, 0);
+  world.add(im);
+}
 function buildBorder() {
   // ei tolppia vesille eikä teille
   const water = t => t === LAKE || t === SEA || t === ROAD;
@@ -753,7 +776,10 @@ function buildTown() {
   // kadut: kartalta tulevat tiet jatkuvat kaupunkiin + pohjois–etelä-katu
   const streets = [];
   for (let z = 0; z < H; z++) if (terr[idx(0, z)] === ROAD) streets.push(z + .5);
-  for (const sz of streets) world.add(mesh(new THREE.BoxGeometry(4.7, .02, .55), MAT.street, -2.35, GROUND_Y + .01, sz, false));
+  for (const sz of streets) {
+    world.add(mesh(new THREE.BoxGeometry(4.7, .02, .55), MAT.street, -2.35, GROUND_Y + .01, sz, false));
+    for (let x = -4.45; x < 0; x += .5) world.add(mesh(dashGeo, LINE_MAT, x, GROUND_Y + .022, sz, false));
+  }
   for (const sx of [-1.8, -3.25]) world.add(mesh(new THREE.BoxGeometry(.26, .02, H + 2), MAT.street, sx, GROUND_Y + .011, H / 2, false));
   let seed = cfg.seed * 977 + 1;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
@@ -1569,7 +1595,7 @@ function waveComp(n) {
   };
 }
 let autoT = -1, autoShown = -1;
-const AUTO_SEC = 10;
+const AUTO_SEC = 6;
 function startWave() {
   if (phase !== 'build' || gameOver) return;
   autoT = -1; showCountdown();
@@ -1659,12 +1685,12 @@ function updatePreview() {
   for (const cls of ['veh', 'inf']) {
     const f = fields[cls]; if (!f) continue;
     const starts = cls === 'veh' ? spawns.veh : spawns.inf.filter((s, k) => k % 2 === 0 && terr[s] !== ROAD);
-    const off = cls === 'veh' ? 0 : .12;
+    const off = cls === 'veh' ? -.16 : .14;
     for (const s of starts) {
       if (f.dist[s] >= INF) continue;
-      const pts = [V(W, tileTop(s) + .07 + off, iz(s) + .5 + off)]; let c = s, guard = 0;
+      const pts = [V(W, tileTop(s) + .08, iz(s) + .5 + off)]; let c = s, guard = 0;
       while (guard++ < 300) {
-        pts.push(V(ix(c) + .5 + off, tileTop(c) + .07 + off, iz(c) + .5 + off));
+        pts.push(V(ix(c) + .5 + off, tileTop(c) + .08, iz(c) + .5 + off));
         if (ix(c) === 0) break;
         const n = bestNext(f, c); if (n < 0) break; c = n;
       }
@@ -1694,6 +1720,7 @@ function loadSector(id, snap) {
   buildTrees();
   buildTown();
   buildBorder();
+  buildRoadLines();
   buildSurroundings();
   fades = []; setCondition('clear', true);
   preview = new THREE.Group(); world.add(preview);
@@ -1735,7 +1762,7 @@ function loadSector(id, snap) {
   else toast(L(`${cfg.name}: puolusta ${cfg.cityTo} – ${battleWaves} aaltoa${battleWaves === cfg.waves ? ' (suurhyökkäys)' : ' (tunnusteluisku)'}.`, `${cfg.nameEn || cfg.name}: defend ${cfg.city} – ${battleWaves} waves${battleWaves === cfg.waves ? ' (major offensive)' : ' (probing attack)'}.`), 'info', 4000);
   saveBattle();
   maybeStartTutorial();
-  autoT = AUTO_SEC;
+  autoT = wave > 0 ? AUTO_SEC : -1;   // ensimmäinen aalto alkaa vasta pelaajan painalluksesta
 }
 // --- kesken jääneen taistelun tallennus (rakennusvaiheessa)
 function saveBattle() {
@@ -1933,7 +1960,7 @@ function openSettings() {
     if (k === 'gfx') applyGfx();
     if (k === 'sound') { setSoundEnabled(v); if (v) { initAudio(); sfx('ui'); } }
     if (k === 'lang') applyLang();
-    if (k === 'auto' && v && screen === 'sector' && phase === 'build' && autoT < 0) autoT = AUTO_SEC;
+    if (k === 'auto' && v && screen === 'sector' && phase === 'build' && autoT < 0 && wave > 0) autoT = AUTO_SEC;
     openSettings();
   });
   $('tutReset').onclick = () => { try { localStorage.removeItem(TUT_KEY); } catch (e) { /* */ } toast(L('Opastus näytetään seuraavassa taistelussa.', 'The tutorial will show in the next battle.'), 'ok', 2500); closeModal(); };
@@ -2175,6 +2202,7 @@ function updateHUD(force) {
   $('season').textContent = (winter ? L('❄️ Talvi', '❄️ Winter') : L('☀️ Sula maa', '☀️ Thaw')) + (phase === 'wave' && cond !== 'clear' ? ` · ${COND[cond].icon} ${L(COND[cond].name, COND[cond].en)}` : '');
   $('speedBtn').textContent = speed + '×'; $('pauseBtn').textContent = paused ? '▶' : '⏸';
   const wb = $('waveBtn'); wb.disabled = phase !== 'build';
+  wb.classList.toggle('first', phase === 'build' && wave === 0);
   wb.textContent = phase === 'build' ? L(`▶ Aloita aalto ${wave + 1}`, `▶ Start wave ${wave + 1}`) : L(`Aalto ${wave} käynnissä…`, `Wave ${wave} in progress…`);
   for (const [k, el] of Object.entries(toolEls)) if (DEFS[k]) el.classList.toggle('poor', money < DEFS[k].cost);
   if (phase === 'build') {
@@ -2677,7 +2705,7 @@ function update(dt) {
 }
 
 // käynnistys: näytetään ensimmäinen sektori taustalla
-genSector(cfg); winter = false; refreshAllTiles(); buildTrees(); buildTown(); buildBorder(); buildSurroundings();
+genSector(cfg); winter = false; refreshAllTiles(); buildTrees(); buildTown(); buildBorder(); buildRoadLines(); buildSurroundings();
 preview = new THREE.Group(); world.add(preview); recomputeFields();
 document.body.classList.add('onmap');
 

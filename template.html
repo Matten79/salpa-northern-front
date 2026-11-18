@@ -37,6 +37,8 @@ button.primary{background:#2f6fb5;border-color:#6aaaf0;font-weight:600}
 .sup.cooling{opacity:.7}.sup.cooling .fill{background:#8a96a0}
 .sup.armed{outline:2px solid #ff7a3c;background:#4a2f22}.sup.armed .st{color:#ffb38a;font-weight:700}
 #waveBtn{min-width:140px}
+#waveBtn.first{animation:wbpulse 1.6s ease-in-out infinite}
+@keyframes wbpulse{0%,100%{box-shadow:0 0 0 0 rgba(106,170,240,.0)}50%{box-shadow:0 0 0 6px rgba(106,170,240,.45)}}
 #intel,#hint{position:fixed;left:8px;bottom:96px;padding:8px 12px;font-size:13px;max-width:min(560px,calc(100% - 16px));line-height:1.4}
 #hint{bottom:auto;top:56px;left:8px}
 .lv{color:#ff9a3c;font-weight:700}.li{color:#8fd8ff;font-weight:700}

@@ -12,6 +12,7 @@
 - Tower defence -taistelut: 11 rakennettavaa kalustoa (mm. henkilö- ja panssarimiinat) + purku, linnoittaminen, päivitykset
 - Hankinnat määrärahoilla: Leopard 2A6 ja Patria AMV (liikkuvat), K9 Moukari, NASAMS, pysyvät parannukset
 - Tulituki: F-35 ja HIMARS (latautuminen 4 min) sekä kertakäyttöinen ydinisku
+- ICEYE-tutkasatelliitti: paljastaa viholliset yöllä ja sumussa, paikantaa tykistöpatterin ja erikoisjoukot; tilauksella uhkaennuste kartalle
 - Viholliset: jalkaväki, BMP, panssarivaunu, lennokki, taisteluhelikopteri, häirintäasema, erikoisjoukot, tykistöpatteri
 - Vuodenajat, yö, sumu ja lumimyräkkä; porot pohjoisessa
 - Asemat säilyvät pidetyssä sektorissa, kesken jäänyt taistelu jatkuu

@@ -120,8 +120,9 @@ function newCampaign() {
   threat.kaakko = 82;                                   // avaushyökkäys Kaakkois-Suomeen
   const others = SECTORS.filter(s => s.id !== 'kaakko');
   threat[others[(Math.random() * others.length) | 0].id] = 50 + Math.round(Math.random() * 15);
+  const forecast = {}; for (const o of SECTORS) forecast[o.id] = Math.round((5 + Math.random() * 12) * (AGG[o.id] || 1) * 1.05);
   return {
-    v: 2, week: 1, threat, resil: MAX_RESIL, wins: 0, losses: 0, held: {}, best: {}, over: null,
+    v: 2, week: 1, threat, forecast, resil: MAX_RESIL, wins: 0, losses: 0, held: {}, best: {}, over: null,
     report: [B('Vihollinen keskittää joukkoja Vaalimaan suunnalle. Puolusta Kaakkois-Suomea!', 'The enemy is massing troops near Vaalimaa. Defend South-East Finland!')],
     support: { f35: 0, himars: 0 }, funds: 300, unlocked: {}, upg: { budget: 0, support: 0 }, reserve: 0, mobilizeCd: 0, forts: {}, battle: null,
   };
@@ -129,6 +130,7 @@ function newCampaign() {
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.v === 2) progress = s; } catch (e) { /* ei tallennusta */ }
 if (!progress) progress = newCampaign();
 // vanhemman tallennuksen täydennys
+if (!progress.forecast) { progress.forecast = {}; for (const o of SECTORS) progress.forecast[o.id] = Math.round((5 + Math.random() * 12) * (AGG[o.id] || 1) * (1 + progress.week * .05)); }
 for (const [k, v] of Object.entries({ funds: 300, unlocked: {}, upg: { budget: 0, support: 0 }, reserve: 0, mobilizeCd: 0, forts: {}, battle: null, support: { f35: 0, himars: 0 } })) if (progress[k] === undefined) progress[k] = v;
 function saveProgress() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(progress)); } catch (e) { /* ohitetaan */ } }
 const threatOf = id => progress.threat[id] || 0;
@@ -170,6 +172,8 @@ function resolveBattle(id, win) {
   tickWeek(id, rep);
 }
 // viikko kuluu: muiden sektoreiden uhka kasvaa, kiireellisistä rangaistus
+function rollInc(id, week) { return Math.round((5 + Math.random() * 12) * (AGG[id] || 1) * (1 + week * .05)); }
+function makeForecast() { progress.forecast = {}; for (const o of SECTORS) progress.forecast[o.id] = rollInc(o.id, progress.week); }
 function tickWeek(id, rep) {
   if (progress.nukeEsc) {
     progress.nukeEsc = false;
@@ -183,7 +187,7 @@ function tickWeek(id, rep) {
       progress.resil--;
       rep.push(B(`⚠ ${o.name}: hyökkäykseen ei vastattu – vihollinen eteni (kestävyys −1).`, `⚠ ${o.nameEn}: attack left unanswered – the enemy advanced (resilience −1).`));
     }
-    const inc = Math.round((5 + Math.random() * 12) * (AGG[o.id] || 1) * (1 + progress.week * .05));
+    const inc = progress.forecast && progress.forecast[o.id] != null ? progress.forecast[o.id] : rollInc(o.id, progress.week);
     const after = Math.min(100, before + inc);
     progress.threat[o.id] = after;
     if (levelOf(before) !== levelOf(after)) {
@@ -198,6 +202,7 @@ function tickWeek(id, rep) {
   }
   progress.resil = Math.max(0, progress.resil);
   progress.week++;
+  makeForecast();
   if (progress.mobilizeCd > 0) progress.mobilizeCd--;
   if (progress.resil <= 0) { progress.over = 'lost'; rep.push(B('Valtakunnan puolustuskestävyys loppui.', 'The nation\'s defensive resilience is exhausted.')); }
   else if (progress.week > CAMPAIGN_WEEKS) { progress.over = 'won'; rep.push(B('Talvi on ohi – itäraja piti!', 'Winter is over – the eastern border held!')); }
@@ -1093,7 +1098,11 @@ function spawnEnemy(type, atTile) {
   }
   e.mesh = proto[type].clone(); e.turret = e.mesh.getObjectByName('t');
   e.bar = makeBar(type === 'tank' || d.static ? .6 : .45, BAR_E); e.bar.root.position.y = type === 'drone' ? .3 : .6; e.bar.root.visible = !!d.static;
-  if (d.static) e.bar.set(1);
+  if (d.static) {
+    e.bar.set(1);
+    e.mark = new THREE.Mesh(new THREE.RingGeometry(.75, .85, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide }));
+    e.mark.position.y = .1; e.mark.visible = false; e.mesh.add(e.mark);
+  }
   e.rotor = e.mesh.getObjectByName('r'); e.ring = e.mesh.getObjectByName('ring');
   if (d.heli) sfx('heli');
   e.mesh.add(e.bar.root);
@@ -1128,7 +1137,7 @@ function nearestTower(x, z, range) {
 }
 function updateEnemy(e, dt) {
   const d = e.d;
-  if (d.static) { e.mesh.position.set(e.x, e.y, e.z); return; }
+  if (d.static) { e.mesh.visible = e.vis !== false; e.mesh.position.set(e.x, e.y, e.z); if (e.mark) e.mark.visible = !!e.located; return; }
   if (d.heli) {
     if (e.rotor) e.rotor.rotation.y += dt * 25;
     const tg = nearestTower(e.x, e.z, d.atk.range);
@@ -1149,6 +1158,7 @@ function updateEnemy(e, dt) {
       if (e.x < -.6) { leak(e); return; }
     }
     e.y = 1.5 + Math.sin(performance.now() * .002 + e.oz * 9) * .06;
+    e.mesh.visible = e.vis !== false;
     e.mesh.position.set(e.x, e.y, e.z); e.mesh.rotation.y = e.rot; e.mesh.rotation.z = tg ? 0 : .12;
     return;
   }
@@ -1204,6 +1214,7 @@ function updateEnemy(e, dt) {
       } else e.atkCd = .3;
     }
   }
+  e.mesh.visible = e.vis !== false;
   e.mesh.position.set(e.x + e.ox, e.y + (e.type === 'inf' ? Math.abs(Math.sin(performance.now() * .012 + e.ox * 40)) * .02 : 0), e.z + e.oz);
   e.mesh.rotation.y = e.rot;
 }
@@ -1239,7 +1250,7 @@ function updateTowers(dt) {
     let tgt = null, tp = INF;
     for (const e of enemies) {
       if (e.dead) continue; const air = e.cls === 'air';
-      if (air && !d.air) continue; if (!air && !d.ground) continue; if (!d.mult[e.armor]) continue;
+      if (air && !d.air) continue; if (!air && !d.ground) continue; if (!d.mult[e.armor]) continue; if (!e.vis) continue;
       const dist = Math.hypot(e.x - s.x, e.z - s.z);
       if (dist > range || (d.minRange && dist < d.minRange)) continue;
       const p = e.d.static ? 50 : air ? e.x * 1.2 : fields[e.cls].dist[e.cur];
@@ -1278,6 +1289,7 @@ function updateProjectiles(dt) {
       p.mesh.position.lerpVectors(p.from, p.to, k); p.mesh.position.y += Math.sin(Math.PI * k) * p.h;
       if (k >= 1) {
         p.done = true; boom(p.to.x, p.to.y + .1, p.to.z, p.splash * .8);
+        if (iceyeT > 0) p.dmg *= 1.25;
         for (const e of enemies) {
           if (e.dead || e.cls === 'air') continue;
           const dd = Math.hypot(e.x - p.to.x, e.z - p.to.z);
@@ -1311,6 +1323,7 @@ function triggerBarrage() {
   const r = new THREE.Mesh(barrageGeo, new THREE.MeshBasicMaterial({ color: 0xff8a1f, transparent: true, opacity: .8, depthWrite: false, side: THREE.DoubleSide }));
   r.position.set(x, tileTop(s.i) + .08, z); r.scale.setScalar(1.3); world.add(r);
   barrages.push({ x, z, t: 2.2, ring: r }); sfx('whistle');
+  if (cond === 'clear') for (const e of enemies) if (e.d.static && !e.dead && !e.located) { e.located = true; toast(L('Vastatykistötutka paikansi vihollisen patterin!', 'Counter-battery radar located the enemy battery!'), 'ok', 3000); }
   if (!barrageWarned) { barrageWarned = true; toast(L('Vihollisen tykistö ampuu asemiasi! Linnoita ne.', 'Enemy artillery is shelling your positions! Fortify them.'), 'warn'); }
 }
 function updateBarrages(dt) {
@@ -1340,7 +1353,7 @@ function waveComp(n) {
 }
 function startWave() {
   if (phase !== 'build' || gameOver) return;
-  wave++; phase = 'wave'; waveTime = 0; spawnTimer = 0; specDone = wave < 5;
+  wave++; phase = 'wave'; waveTime = 0; spawnTimer = 0; specDone = wave < 5; specTile = -1; specMark.visible = false;
   hpMult = (1 + .12 * (wave - 1)) * (1 + (progress.week - 1) * .04); dmgMult = 1 + .06 * (wave - 1);
   const c = waveComp(wave), items = [];
   const W8 = { inf: 0, bmp: .35, tank: .6, drone: Math.random(), heli: .5, ew: .45 };
@@ -1355,9 +1368,10 @@ function startWave() {
     const opts = []; for (let z = 1; z < H - 1; z++) for (let x = BORDER + 2; x < W - 1; x++) { const i = idx(x, z); if (terr[i] !== LAKE && terr[i] !== SEA && terr[i] !== ROAD) opts.push(i); }
     if (opts.length) {
       const bi = opts[(Math.random() * opts.length) | 0]; spawnEnemy('battery', bi);
-      toast(L('Vihollisen tykistöpatteri havaittu rajan takana! Tuhoa se kranaatinheittimellä, K9:llä tai HIMARSilla.', 'Enemy artillery battery spotted across the border! Destroy it with mortars, K9 or HIMARS.'), 'warn', 5000);
+      toast(L('Vihollisen tykistöpatteri rajan takana! Paikanna se ICEYElla – tai vastatykistötutka paikantaa sen ensimmäisestä tulituksesta, jos sää on selkeä.', 'Enemy artillery battery across the border! Locate it with ICEYE – or counter-battery radar finds it after its first salvo in clear weather.'), 'warn', 5500);
     }
   }
+  if (!specDone) specTile = pickSpecTile();
   setCondition(cond = nextCond);
   if (cond !== 'clear') toast(`${COND[cond].icon} ${L(COND[cond].name, COND[cond].en)}: ${L(COND[cond].desc, COND[cond].descEn)}`, 'info', 3500);
   sfx('wave');
@@ -1366,7 +1380,7 @@ function startWave() {
   updateHUD(true);
 }
 function endWave() {
-  phase = 'build';
+  phase = 'build'; iceyeT = 0; specMark.visible = false;
   for (const e of enemies) if (e.d.static && !e.dead) kill(e);
   setCondition('clear');
   nextCond = pickCond(wave + 1);
@@ -1437,7 +1451,7 @@ function loadSector(id, snap) {
   units = []; cleared = new Set(); moveMarker.visible = false;
   scene.remove(world); world = new THREE.Group(); scene.add(world);
   structs.clear(); rubble.clear();
-  strikes = []; nukes = []; radZones = []; shake = 0; supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
+  strikes = []; nukes = []; radZones = []; shake = 0; sats = []; iceyeT = 0; specTile = -1; specMark.visible = false; supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
   enemies = []; projectiles = []; effects = []; barrages = []; queue = []; barrageTimes = []; deer = []; shockwaves = [];
   money = cfg.money + 100 + (progress.upg.budget || 0) * 100; lives = 20; wave = 0; phase = 'build'; speed = 1; paused = false; gameOver = false; endless = false;
   if (!snap && progress.reserve > 0) { money += 250; progress.reserve--; }
@@ -1552,7 +1566,12 @@ function buildMap() {
     const [mx, my] = proj(...s.crossing);
     h += `<g class="hit" data-id="${s.id}"><circle cx="${mx + 16}" cy="${my}" r="${sel ? 13 : 11}" fill="${LV.col}" stroke="${sel ? '#fff' : '#0d141b'}" stroke-width="2"/>`;
     h += `<text x="${mx + 16}" y="${my + 4.5}" text-anchor="middle" class="num">${LV.badge || s.no}</text>`;
-    h += `<text x="${mx + 32}" y="${my + 4}" class="mlabel sec">${s.short}</text></g>`;
+    h += `<text x="${mx + 32}" y="${my + 4}" class="mlabel sec">${s.short}</text>`;
+    if (progress.upg.iceye && progress.forecast && !progress.over) {
+      const nxt = Math.min(100, threatOf(s.id) + (progress.forecast[s.id] || 0)), up = levelOf(nxt) !== levelOf(threatOf(s.id));
+      h += `<text x="${mx + 32 + s.short.length * 7.6 + 6}" y="${my + 4}" class="mlabel fc ${up ? 'up' : ''}">▲${progress.forecast[s.id]}</text>`;
+    }
+    h += `</g>`;
   }
   svg.innerHTML = h;
   svg.querySelectorAll('.hit').forEach(el => el.addEventListener('click', () => {
@@ -1610,6 +1629,7 @@ function renderBrief() {
     <ul class="facts">${(settings.lang === 'en' && s.factsEn ? s.factsEn : s.facts).map(f => `<li>${f}</li>`).join('')}
       <li>❄️ ${L('Talvi', 'Winter')}: ${seasonRange(s.winter, waves)}</li>
       ${s.reindeer ? `<li>🦌 ${L('Poroja maastossa – ne hidastavat vihollisen ajoneuvoja', 'Reindeer roam here – they slow enemy vehicles')}</li>` : ''}
+      ${p.upg.iceye && p.forecast ? `<li>🛰 ${L('ICEYE-ennuste: uhka', 'ICEYE forecast: threat')} +${p.forecast[s.id]} ${L('ensi viikolla', 'next week')}${levelOf(Math.min(100, t + p.forecast[s.id])) !== lv ? L(` → <b>${LEVEL[levelOf(Math.min(100, t + p.forecast[s.id]))].label}</b>`, ` → <b>${LEVEL[levelOf(Math.min(100, t + p.forecast[s.id]))].labelEn}</b>`) : ''}</li>` : ''}
       ${p.forts[s.id] && p.forts[s.id].structs.length ? `<li>🛡 ${L(`Säilyneitä asemia: ${p.forts[s.id].structs.length + p.forts[s.id].units.length}`, `Surviving positions: ${p.forts[s.id].structs.length + p.forts[s.id].units.length}`)}</li>` : ''}
     </ul>
     <div class="row"><span>${L('Taistelu', 'Battle')}</span><b>${lv === 'calm' ? '–' : `${waves} ${L('aaltoa', 'waves')}${lv === 'red' ? L(' (suurhyökkäys)', ' (major offensive)') : L(' (tunnusteluisku)', ' (probing attack)')}`}</b></div>
@@ -1686,6 +1706,7 @@ function openSettings() {
 const SHOP = [
   { k: 'leo', cost: 400 }, { k: 'k9', cost: 350 }, { k: 'nasams', cost: 450 }, { k: 'amv', cost: 250 },
   { k: 'budget', upg: true, max: 3, cost: 150, icon: '💶', name: 'Lisäbudjetti', nameEn: 'Extra budget', desc: '+100 € aloitusbudjettia jokaiseen taisteluun.', descEn: '+100 € starting budget in every battle.' },
+  { k: 'iceye', upg: true, max: 1, cost: 300, svg: true, name: 'ICEYE-tilaus', nameEn: 'ICEYE subscription', desc: 'Ylilennot 90 s välein (muuten 180 s), tutkakuva kestää 30 s. Kartalla näkyy ensi viikon uhkaennuste.', descEn: 'Passes every 90 s (otherwise 180 s), radar image lasts 30 s. The map shows next week\'s threat forecast.' },
   { k: 'support', upg: true, max: 2, cost: 200, icon: '📡', name: 'Tulituen tehostus', nameEn: 'Fire support boost', desc: 'F-35:n ja HIMARSin latausaika −1 min.', descEn: 'F-35 and HIMARS cooldown −1 min.' },
 ];
 function openShop() {
@@ -1696,7 +1717,7 @@ function openShop() {
     const lvl = it.upg ? ` (${p.upg[it.k] || 0}/${it.max})` : '';
     const name = it.upg ? L(it.name, it.nameEn) : d.name;
     const desc = it.upg ? L(it.desc, it.descEn) : `${L(d.desc, d.descEn || d.desc)} ${L('Hinta taistelussa', 'Cost in battle')}: ${d.cost} €.`;
-    return `<div class="shopitem ${owned ? 'owned' : ''}"><span class="sico">${it.upg ? it.icon : ICONS[it.k]}</span>
+    return `<div class="shopitem ${owned ? 'owned' : ''}"><span class="sico">${it.svg ? ICONS[it.k] : it.upg ? it.icon : ICONS[it.k]}</span>
       <div class="sinfo"><b>${name}${lvl}</b><small>${desc}</small></div>
       <button class="primary" data-k="${it.k}" ${owned || p.funds < it.cost ? 'disabled' : ''}>${owned ? (it.upg ? L('Maksimi', 'Max') : L('Hankittu', 'Owned')) : `${it.cost} M€`}</button></div>`;
   }).join('');
@@ -1705,7 +1726,7 @@ function openShop() {
     const it = SHOP.find(x => x.k === b.dataset.k); if (!it || p.funds < it.cost) return;
     p.funds -= it.cost;
     if (it.upg) p.upg[it.k] = (p.upg[it.k] || 0) + 1; else p.unlocked[it.k] = true;
-    saveProgress(); sfx('coin'); rebuildTools(); openShop(); renderBrief();
+    saveProgress(); sfx("coin"); rebuildTools(); openShop(); buildMap(); renderBrief();
   });
 }
 function applyStaticTexts() {
@@ -1727,6 +1748,7 @@ const INTRO_EN = `<p>The eastern border is split into <b>six sectors</b> from So
     <li><b>Tank traps</b> stop vehicles. Funnel the enemy into kill zones – but never block the route completely.</li>
     <li><b>Attacks:</b> on the map a red border = urgent major offensive, yellow = threat rising. Each battle takes a week, and meanwhile the threat grows elsewhere. Leaving an urgent sector undefended costs national resilience. Hold for 12 weeks.</li>
     <li><b>Fire support:</b> ✈️ F-35 and 🚀 HIMARS are called in battle (hotkeys F and H). They recharge for 4 minutes after use. The ☢ nuclear strike can be used once per campaign.</li>
+    <li><b>🛰 ICEYE:</b> the Finnish radar satellite sees through darkness and clouds. At night, in fog and snowstorms enemies are only visible near your positions – an ICEYE pass reveals them all, locates the artillery battery and the special forces landing zone (hotkey I).</li>
     <li><b>Procurement:</b> repelled attacks earn funds for Leopard 2A6, K9 Thunder, NASAMS and Patria AMV.</li>
     <li><b>Fortify:</b> tanks, drones, helicopters and artillery destroy your positions. Positions survive in a sector you hold.</li>
     <li><b>Winter</b> freezes lakes and swamps. Night, fog and snowstorms shorten ranges.</li>
@@ -1928,6 +1950,7 @@ addEventListener('keydown', e => {
   if (e.key === 'f' || e.key === 'F') setSupportMode('f35');
   if (e.key === 'h' || e.key === 'H') setSupportMode('himars');
   if (e.key === 'n' || e.key === 'N') setSupportMode('nuke');
+  if (e.key === 'i' || e.key === 'I') setSupportMode('iceye');
   if (e.key === ' ') { e.preventDefault(); phase === 'build' ? startWave() : (paused = !paused, updateHUD(true)); }
   const n = parseInt(e.key); const ks = Object.keys(toolEls); if (n >= 1 && n <= ks.length) setTool(ks[n - 1]);
 });
@@ -2025,6 +2048,7 @@ addEventListener('keydown', coverKey);
 
 // ================= TULITUKI: F-35 JA HIMARS =================
 const SUPPORT = {
+  iceye:  { name: 'ICEYE', cd: 180, key: 'i', desc: 'Tutkasatelliitin ylilento: paljastaa kaikki viholliset myös pimeällä ja sumussa, paikantaa tykistöpatterin ja erikoisjoukkojen laskeutumisalueen. HIMARS ja tykistö osuvat paljastettuihin kohteisiin tarkemmin.', descEn: 'Radar satellite pass: reveals all enemies even at night and in fog, locates the artillery battery and the special forces landing zone. HIMARS and artillery hit revealed targets more accurately.' },
   f35:    { name: 'F-35', icon: '✈️', cd: 240, radius: 3.5, key: 'f', descEn: 'Fighter precision strike: guided bombs on the heaviest vehicles in the area, and shoots down drones and helicopters.', desc: 'Hävittäjän täsmäisku: ohjautuvat pommit kohdealueen raskaimpiin ajoneuvoihin ja lennokkien alasampuminen.' },
   himars: { name: 'HIMARS', icon: '🚀', cd: 240, radius: 1.8, key: 'h', descEn: 'Rocket artillery: an eight-rocket salvo. Destroys everything on the ground in the area.', desc: 'Raketinheitin: kahdeksan raketin aluetuli. Tuhoaa maalla kaiken kohdealueella.' },
   nuke:   { name: 'Ydinisku', nameEn: 'Nuclear strike', cd: 0, radius: 6, once: true, key: 'n',
@@ -2032,6 +2056,7 @@ const SUPPORT = {
     descEn: 'Single use per campaign. Destroys everything within 6 tiles – including your own positions near ground zero – and leaves a radiation zone. Enemy pressure escalates in other sectors.' },
 };
 if (!progress.support) progress.support = { f35: 0, himars: 0 };
+if (progress.support.iceye == null) progress.support.iceye = 0;
 for (const k of ['f35', 'himars']) progress.support[k] = Math.min(progress.support[k] || 0, SUPPORT[k].cd);
 let supportMode = null, pendingStrike = -1, strikes = [], supportUiT = 0;
 const strikeRingMat = new THREE.MeshBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
@@ -2061,6 +2086,10 @@ function setSupportMode(k) {
   if (screen !== 'sector' || gameOver) return;
   if (supportMode === k) { cancelSupport(); return; }
   if (phase !== 'wave') { toast(L('Tulitukea voi tilata vain hyökkäyksen aikana.', 'Fire support can only be called during an attack.'), 'warn', 2200); return; }
+  if (k === 'iceye') {
+    if (progress.support.iceye > 0) { toast(L(`ICEYE: seuraava ylilento ${fmtCd(progress.support.iceye)}.`, `ICEYE: next pass in ${fmtCd(progress.support.iceye)}.`), 'warn', 2200); return; }
+    activateIceye(); return;
+  }
   if (k === 'f35' && COND[cond].noAir) { toast(L('Sää estää lentotoiminnan.', 'Weather prevents air operations.'), 'warn', 2200); sfx('deny'); return; }
   if (k === 'nuke' && progress.nukeUsed) { toast(L('Ydinisku on jo käytetty tässä kampanjassa.', 'The nuclear strike has already been used this campaign.'), 'warn', 2500); sfx('deny'); return; }
   if (progress.support[k] > 0) { toast(L(`${SUPPORT[k].name} latautuu vielä ${fmtCd(progress.support[k])}.`, `${SUPPORT[k].name} recharging: ${fmtCd(progress.support[k])}.`), 'warn', 2200); return; }
@@ -2081,7 +2110,8 @@ function previewStrike(i) {
   const r = SUPPORT[supportMode].radius, x = ix(i) + .5, z = iz(i) + .5, y = tileTop(i) + .07;
   for (const m of [strikeRing, strikeDisk]) { m.visible = true; m.position.set(x, y, z); m.scale.setScalar(r); }
 }
-function supportCd(k) { return Math.max(120, SUPPORT[k].cd - (progress.upg.support || 0) * 60); }
+function supportCd(k) { if (k === 'iceye') return progress.upg.iceye ? 90 : 180; return Math.max(120, SUPPORT[k].cd - (progress.upg.support || 0) * 60); }
+const iceyeDur = () => (progress.upg.iceye ? 30 : 20);
 function fmtCd(s) { s = Math.ceil(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 function callStrike(k, i) {
   const x = ix(i) + .5, z = iz(i) + .5;
@@ -2091,7 +2121,7 @@ function callStrike(k, i) {
   if (k === 'himars') {
     toast(L('🚀 HIMARS: tulitehtävä vahvistettu – raketit matkalla!', '🚀 HIMARS: fire mission confirmed – rockets inbound!'), 'ok', 2500);
     for (let n = 0; n < 8; n++) {
-      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 1.5;
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * (iceyeT > 0 ? .8 : 1.5);
       const tx = x + Math.cos(a) * r, tz = z + Math.sin(a) * r;
       const m = mesh(new THREE.CylinderGeometry(.035, .035, .32, 5).rotateZ(Math.PI / 2), MAT.white, -6, .6, z, false);
       m.visible = false; world.add(m);
@@ -2121,7 +2151,7 @@ function updateStrikes(dt) {
         for (const e of enemies) {
           if (e.dead || e.cls === 'air') continue;
           const d = Math.hypot(e.x - s.to.x, e.z - s.to.z);
-          if (d < 1.4) hurt(e, 260 * (1 - d / 1.4 * .4), [1, 1, .85, 0]);
+          if (d < 1.4) hurt(e, 260 * (iceyeT > 0 ? 1.25 : 1) * (1 - d / 1.4 * .4), [1, 1, .85, 0, 0]);
         }
       }
     } else if (s.kind === 'jet') {
@@ -2174,6 +2204,7 @@ for (const [k, d] of Object.entries(SUPPORT)) {
   b.innerHTML = `<span class="ic">${ICONS[k]}</span><span class="nm">${d.name}</span><span class="st"></span><i class="fill"></i>`;
   b.onclick = () => setSupportMode(k);
   if (k === 'nuke') b.classList.add('nuke');
+  if (k === 'iceye') b.classList.add('iceye');
   $('support').appendChild(b); supEls[k] = b;
 }
 // ================= YDINISKU =================
@@ -2270,15 +2301,70 @@ function updateSupportUI(force) {
     b.classList.toggle('ready', ready && phase === 'wave');
     b.classList.toggle('armed', supportMode === k);
     b.classList.toggle('cooling', !ready);
-    b.querySelector('.st').textContent = supportMode === k ? L('VALITSE KOHDE', 'PICK TARGET') : ready ? (phase === 'wave' ? L('VALMIS', 'READY') : L('valmiina', 'ready')) : fmtCd(cd);
+    b.querySelector('.st').textContent = k === 'iceye' && iceyeT > 0 ? L(`KUVA ${Math.ceil(iceyeT)} s`, `IMAGE ${Math.ceil(iceyeT)} s`) : supportMode === k ? L('VALITSE KOHDE', 'PICK TARGET') : ready ? (phase === 'wave' ? L('VALMIS', 'READY') : L('valmiina', 'ready')) : fmtCd(cd);
+    if (k === 'iceye') b.classList.toggle('active', iceyeT > 0);
     b.querySelector('.fill').style.width = ready ? '100%' : `${(1 - cd / supportCd(k)) * 100}%`;
     b.classList.toggle('blocked', k === 'f35' && phase === 'wave' && !!COND[cond].noAir);
   }
 }
 
+// ================= ICEYE: TUTKASATELLIITTI JA NÄKYVYYS =================
+let iceyeT = 0, sats = [];
+const SPOT = { aa: 5, nasams: 7.5 };
+function updateVisibility(dt) {
+  if (iceyeT > 0) { iceyeT = Math.max(0, iceyeT - dt); if (iceyeT === 0) { specMark.visible = false; toast(L('ICEYE: tutkakuva vanheni.', 'ICEYE: radar image expired.'), 'info', 2000); } }
+  const daylight = cond === 'clear';
+  const spotters = [...structs.values()].filter(x => TOWERS.has(x.kind)).concat(units.filter(u => !u.dead));
+  for (const e of enemies) {
+    if (e.dead) continue;
+    if (e.d.static) { e.vis = iceyeT > 0 || !!e.located; if (iceyeT > 0) e.located = true; continue; }
+    if (daylight || iceyeT > 0 || e.x < 4) { e.vis = true; continue; }
+    const air = e.cls === 'air'; let v = false;
+    for (const sp of spotters) { const r = air ? (SPOT[sp.kind] || 3.5) : 3.5; if (Math.abs(sp.x - e.x) < r && Math.hypot(sp.x - e.x, sp.z - e.z) < r) { v = true; break; } }
+    e.vis = v;
+  }
+}
+const SAT_PROTO = (() => {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(.4, .25, .25), M(0xd8dde2), 0, 0, 0, false));
+  for (const z of [-.55, .55]) g.add(mesh(new THREE.BoxGeometry(.32, .02, .7), M(0x2a4a7a), 0, 0, z, false));
+  g.add(mesh(new THREE.BoxGeometry(.05, .5, .05), M(0x888888), 0, -.3, 0, false));
+  g.scale.setScalar(1.4);
+  return g;
+})();
+const sweepMat = new THREE.MeshBasicMaterial({ color: 0x7fe3ff, transparent: true, opacity: .28, depthWrite: false, side: THREE.DoubleSide });
+function activateIceye() {
+  progress.support.iceye = supportCd('iceye'); saveProgress();
+  const sat = SAT_PROTO.clone(); sat.position.set(-8, 13, H / 2); world.add(sat);
+  const sweep = new THREE.Mesh(new THREE.PlaneGeometry(.8, H + 2).rotateX(-Math.PI / 2), sweepMat); sweep.position.set(-1, .7, H / 2); sweep.visible = false; world.add(sweep);
+  sats.push({ sat, sweep, t: 0 });
+  sfx('ui'); toast(L('🛰 ICEYE-ylilento – tutkakuva tulossa…', '🛰 ICEYE pass – radar image incoming…'), 'ok', 2000);
+  updateSupportUI(true);
+}
+function updateSats(dt) {
+  for (const s of sats) {
+    s.t += dt;
+    s.sat.position.x = -8 + s.t * 18; s.sat.rotation.x = s.t * .3;
+    if (s.t > .6 && !s.swept) {
+      s.sweep.visible = true; s.sweep.position.x = -1 + (s.t - .6) * 28;
+      if (s.sweep.position.x > W + 1) {
+        s.swept = true; s.sweep.visible = false;
+        iceyeT = iceyeDur();
+        for (const e of enemies) if (e.d.static && !e.dead) e.located = true;
+        const msgs = [L(`ICEYE: kaikki viholliset näkyvissä ${iceyeDur()} s.`, `ICEYE: all enemies visible for ${iceyeDur()} s.`)];
+        if (enemies.some(e => e.d.static && !e.dead)) msgs.push(L('Tykistöpatteri paikannettu.', 'Artillery battery located.'));
+        if (specTile >= 0) { specMark.visible = true; specMark.position.set(ix(specTile) + .5, tileTop(specTile) + .08, iz(specTile) + .5); msgs.push(L('Erikoisjoukkojen laskeutumisalue havaittu.', 'Special forces landing zone detected.')); }
+        toast('🛰 ' + msgs.join(' '), 'ok', 4000); sfx('coin');
+      }
+    }
+    if (s.t > 2.6) { world.remove(s.sat); world.remove(s.sweep); s.done = true; }
+  }
+  sats = sats.filter(s => !s.done);
+  if (specMark.visible) specMark.material.opacity = .5 + .4 * Math.abs(Math.sin(performance.now() * .005));
+}
+
 // ================= ERIKOISJOUKOT SELUSTAAN =================
-function spawnSpecialForces() {
-  specDone = true;
+function pickSpecTile() {
   const f = fields.inf, opts = [];
   for (let z = 0; z < H; z++) for (let x = 9; x < BORDER - 5; x++) {
     const i = idx(x, z);
@@ -2286,8 +2372,17 @@ function spawnSpecialForces() {
     if ([...structs.values()].some(st => Math.hypot(st.x - x - .5, st.z - z - .5) < 2.2)) continue;
     opts.push(i);
   }
-  if (!opts.length) return;
-  const c = opts[(Math.random() * opts.length) | 0], n = 2 + Math.floor(wave / 4);
+  return opts.length ? opts[(Math.random() * opts.length) | 0] : -1;
+}
+let specTile = -1;
+const specMark = new THREE.Mesh(new THREE.RingGeometry(.8, 1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7fe3ff, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide }));
+specMark.visible = false; scene.add(specMark);
+function spawnSpecialForces() {
+  specDone = true; specMark.visible = false;
+  let c = specTile; specTile = -1;
+  if (c < 0 || structs.has(c)) c = pickSpecTile();
+  if (c < 0) return;
+  const n = 2 + Math.floor(wave / 4);
   for (let k = 0; k < n; k++) spawnEnemy('spec', c);
   for (const e of enemies.slice(-n)) { e.ox = (Math.random() - .5) * .5; e.oz = (Math.random() - .5) * .5; }
   toast(L('⚠ Erikoisjoukkoja havaittu selustassa!', '⚠ Special forces spotted behind our lines!'), 'warn', 3500);
@@ -2302,6 +2397,7 @@ function update(dt) {
     if (spawnTimer <= 0 && queue.length) { spawnEnemy(queue.shift()); spawnTimer = .75; }
     while (barrageTimes.length && barrageTimes[0] <= waveTime) { barrageTimes.shift(); triggerBarrage(); }
   }
+  updateVisibility(dt);
   for (const e of enemies) if (!e.dead) updateEnemy(e, dt);
   updateUnits(dt);
   updateTowers(dt);
@@ -2311,6 +2407,7 @@ function update(dt) {
   if (deer.length) updateDeer(dt);
   updateStrikes(dt);
   updateNukes(dt);
+  updateSats(dt);
   if (phase === 'wave') tickSupport(dt);
   enemies = enemies.filter(e => !e.dead);
   if (phase === 'wave' && !specDone && waveTime > 12 + (wave % 3) * 3) spawnSpecialForces();

@@ -112,6 +112,15 @@ export const ICONS = {
     <path d="M16 16 L9.5 4.8 A13 13 0 0 1 22.5 4.8 Z" stroke="none" transform="rotate(120 16 16) translate(0 1.2)"/>
     <path d="M16 16 L9.5 4.8 A13 13 0 0 1 22.5 4.8 Z" stroke="none" transform="rotate(240 16 16) translate(0 1.2)"/>
     <circle cx="16" cy="16" r="5" fill="#0d141b" stroke="none" opacity=".9"/><circle cx="16" cy="16" r="2.6" stroke="none"/>`),
+  // ICEYE: tutkasatelliitti
+  iceye: svg(`
+    <rect x="12" y="11" width="8" height="10" rx="1" stroke="none"/>
+    <rect x="1.5" y="13" width="9" height="6" stroke="none" opacity=".8"/>
+    <rect x="21.5" y="13" width="9" height="6" stroke="none" opacity=".8"/>
+    <path d="M4.5 13v6M7.5 13v6M24.5 13v6M27.5 13v6" fill="none" stroke="#0d141b" stroke-width=".8" opacity=".6"/>
+    <path d="M16 21 L16 24" fill="none" stroke-width="1.6"/>
+    <path d="M10 29 Q16 23 22 29" fill="none" stroke-width="1.8"/>
+    <path d="M7 31.5 Q16 22 25 31.5" fill="none" stroke-width="1.2" opacity=".55"/>`),
   // asetukset (ratas)
   gear: svg(`<circle cx="16" cy="16" r="5" fill="none" stroke-width="3"/><path d="M16 3v5M16 24v5M3 16h5M24 16h5M6.8 6.8l3.5 3.5M21.7 21.7l3.5 3.5M6.8 25.2l3.5-3.5M21.7 10.3l3.5-3.5" fill="none" stroke-width="3"/>`),
 };

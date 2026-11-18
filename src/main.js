@@ -868,78 +868,232 @@ function showRange(x, z, y, r, rMin) {
 }
 const towerRange = (def, lvl, i) => Math.max(1.5, def.range + .5 * (lvl - 1) + (terr[i] === FELL ? 1 : 0) + (phase === 'wave' ? COND[cond].range : 0));
 
+// ================= MALLIEN APUFUNKTIOT =================
+Object.assign(MAT, {
+  ru: M(0x5d5c41), ru2: M(0x484a34), ruUni: M(0x6d6a4b), ruVest: M(0x4b4a37), ruHelm: M(0x535539),
+  finUni: M(0x55613f), finVest: M(0x3e4630), finHelm: M(0x4a5336), skin: M(0xc99a7c), glass: M(0x1d2731),
+  rubber: M(0x232526), dirt: M(0x5b4d3b), wood: M(0x6b4a2e), heliG: M(0x56604a), shahed: M(0x2c2e31), red: M(0xd8342b),
+});
+const RU = { uni: MAT.ruUni, vest: MAT.ruVest, helm: MAT.ruHelm, skin: MAT.skin, gun: MAT.dark, band: MAT.white };
+const RU_SPEC = { uni: MAT.spec, vest: MAT.dark, helm: MAT.dark, skin: MAT.dark, gun: MAT.dark, band: MAT.white };
+const FIN = { uni: MAT.finUni, vest: MAT.finVest, helm: MAT.finHelm, skin: MAT.skin, gun: MAT.dark };
+function Bx(g, w, h, d, mat, x, y, z, rx = 0, ry = 0, rz = 0, sh = true) {
+  const m = mesh(new THREE.BoxGeometry(w, h, d), mat, x, y, z, sh); m.rotation.set(rx, ry, rz); g.add(m); return m;
+}
+function Cy(g, rt, rb, h, seg, mat, x, y, z, rx = 0, ry = 0, rz = 0, sh = true) {
+  const m = mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat, x, y, z, sh); m.rotation.set(rx, ry, rz); g.add(m); return m;
+}
+// putki x-akselin suuntaan: alkaa kohdasta x (säde r1) ja päättyy x+len (säde r2)
+const Tube = (g, r1, r2, len, mat, x, y, z, seg = 6) => Cy(g, r2, r1, len, seg, mat, x + len / 2, y, z, 0, 0, -Math.PI / 2);
+// pyörä z-akselin suuntaan
+const Wheel = (g, r, w, mat, x, y, z, seg = 8) => Cy(g, r, r, w, seg, mat, x, y, z, Math.PI / 2, 0, 0);
+// tanko kahden pisteen välille
+function Rod(g, a, b, r, mat) {
+  const A = new THREE.Vector3(...a), Bv = new THREE.Vector3(...b), d = Bv.clone().sub(A), len = d.length();
+  const m = mesh(new THREE.CylinderGeometry(r, r, len, 4), mat); m.position.copy(A).addScaledVector(d, .5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); g.add(m); return m;
+}
+// sivuprofiili (x,y) pursotettuna z-suunnassa
+function Side(g, pts, width, mat, x = 0, y = 0, z = 0) {
+  const geo = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], p[1]))), { depth: width, bevelEnabled: false });
+  geo.translate(0, 0, -width / 2); const m = mesh(geo, mat, x, y, z); g.add(m); return m;
+}
+// päältä katsottu muoto (x,z) pursotettuna ylöspäin
+function Top(g, pts, h, mat, x = 0, y = 0, z = 0) {
+  const geo = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], -p[1]))), { depth: h, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2); const m = mesh(geo, mat, x, y, z); g.add(m); return m;
+}
+// telaketju sivuprofiilina + tukipyörät
+function tracks(g, len, zOff, w, h, nW, wr, mat = MAT.dark, wmat = MAT.rubber) {
+  const L2 = len / 2;
+  for (const s of [-1, 1]) {
+    Side(g, [[-L2, .02], [L2 - .07, .02], [L2, h * .7], [L2 - .02, h], [-L2 - .01, h], [-L2 - .03, h * .5]], w, mat, 0, 0, s * zOff);
+    for (let k = 0; k < nW; k++) Wheel(g, wr, .012, wmat, -L2 + .06 + k * (len - .14) / (nW - 1), wr + .015, s * (zOff + w / 2 + .004));
+  }
+}
+// valkoinen Z-tunnus päältä nähtynä (venäläiset tunnusmerkit)
+function zMark(g, x, y, z, s = 1) {
+  Bx(g, .06 * s, .006, .012 * s, MAT.white, x, y, z - .025 * s, 0, 0, 0, false);
+  Bx(g, .06 * s, .006, .012 * s, MAT.white, x, y, z + .025 * s, 0, 0, 0, false);
+  Bx(g, .072 * s, .006, .012 * s, MAT.white, x, y, z, 0, .7, 0, false);
+}
+// Suomen lippu ajoneuvon kylkeen
+function finFlag(g, x, y, z) {
+  const sz = z > 0 ? 1 : -1;
+  Bx(g, .07, .045, .004, MAT.white, x, y, z, 0, 0, 0, false);
+  Bx(g, .07, .012, .006, MAT.blue, x, y, z + sz * .001, 0, 0, 0, false);
+  Bx(g, .012, .045, .006, MAT.blue, x + .012, y, z + sz * .001, 0, 0, 0, false);
+}
+// sotilas: pose 'stand' | 'kneel' | 'prone', katse +x
+const helmGeo = new THREE.SphereGeometry(.031, 7, 3, 0, Math.PI * 2, 0, Math.PI / 2);
+function soldier(g, x, z, ry, C, pose = 'stand', stride = 0) {
+  const s = new THREE.Group(); s.position.set(x, 0, z); s.rotation.y = ry; g.add(s);
+  if (pose === 'prone') {
+    Bx(s, .12, .028, .03, C.uni, -.11, .016, -.02, 0, .12, 0); Bx(s, .12, .028, .03, C.uni, -.11, .016, .02, 0, -.12, 0);
+    Bx(s, .1, .045, .07, C.vest, -.01, .026, 0);
+    Bx(s, .04, .038, .04, C.skin, .06, .045, 0); s.add(mesh(helmGeo, C.helm, .062, .058, 0));
+    Bx(s, .07, .02, .02, C.uni, .05, .02, .04, 0, .3, 0); Bx(s, .07, .02, .02, C.uni, .05, .02, -.04, 0, -.3, 0);
+    Bx(s, .15, .016, .016, C.gun, .1, .04, .02);
+    return s;
+  }
+  const y0 = pose === 'kneel' ? -.055 : 0;
+  if (pose === 'kneel') {
+    Bx(s, .065, .026, .03, C.uni, .02, .062, -.022); Bx(s, .026, .06, .03, C.uni, .052, .03, -.022);
+    Bx(s, .028, .062, .03, C.uni, -.005, .062, .022); Bx(s, .075, .022, .03, C.uni, -.04, .012, .022);
+  } else {
+    Bx(s, .028, .105, .03, C.uni, .008, .052, -.02, 0, 0, stride); Bx(s, .028, .105, .03, C.uni, -.008, .052, .02, 0, 0, -stride);
+  }
+  Bx(s, .048, .09, .075, C.uni, 0, .145 + y0, 0);
+  Bx(s, .056, .06, .082, C.vest, .002, .15 + y0, 0);
+  Bx(s, .03, .06, .055, C.vest, -.04, .15 + y0, 0);               // reppu
+  Bx(s, .022, .075, .022, C.uni, .03, .15 + y0, .046, 0, 0, .9); Bx(s, .022, .075, .022, C.uni, .04, .145 + y0, -.04, 0, 0, 1.1);
+  if (C.band) Bx(s, .025, .014, .025, C.band, .012, .17 + y0, .05, 0, 0, .9, false);
+  Bx(s, .042, .042, .042, C.skin, 0, .212 + y0, 0);
+  s.add(mesh(helmGeo, C.helm, 0, .226 + y0, 0));
+  Bx(s, .15, .016, .016, C.gun, .07, .15 + y0, .01, 0, 0, .08);
+  return s;
+}
+function sandRing(g, r, n, layers = 2, open = true) {
+  const geo = new THREE.BoxGeometry(.12, .05, .07);
+  for (let l = 0; l < layers; l++) for (let k = 0; k < n; k++) {
+    const a = (k + (l % 2) * .5) / n * Math.PI * 2;
+    if (open && Math.cos(a) < -.85) continue;
+    const m = mesh(geo, MAT.sand, Math.cos(a) * r, .025 + l * .046, Math.sin(a) * r); m.rotation.y = -a + Math.PI / 2; g.add(m);
+  }
+}
+const pit = (g, r) => Cy(g, r, r + .03, .016, 12, MAT.dirt, 0, .008, 0, 0, 0, 0, false);
+// yhdistää samanmateriaaliset osat yhdeksi meshiksi (vähemmän piirtokutsuja); nimetyt osat (torni, roottori…) jäävät erilleen
+function bake(root) {
+  root.updateMatrixWorld(true);
+  const inv = root.matrixWorld.clone().invert(), buckets = new Map(), named = [], kill = [];
+  (function walk(o) {
+    for (const c of o.children) {
+      if (c.name) { named.push(c); continue; }
+      if (c.isMesh) {
+        let geo = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
+        for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal') geo.deleteAttribute(k);
+        geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, c.matrixWorld));
+        const key = c.material.uuid + (c.castShadow ? '1' : '0');
+        if (!buckets.has(key)) buckets.set(key, { mat: c.material, sh: c.castShadow, geos: [] });
+        buckets.get(key).geos.push(geo); kill.push(c);
+      } else if (c.children.length) walk(c);
+    }
+  })(root);
+  for (const c of kill) c.parent.remove(c);
+  (function prune(o) { for (const c of [...o.children]) { if (c.name || c.isMesh) continue; prune(c); if (!c.children.length) o.remove(c); } })(root);
+  for (const b of buckets.values()) root.add(mesh(mergeGeometries(b.geos), b.mat, 0, 0, 0, b.sh));
+  for (const n of named) bake(n);
+  return root;
+}
+
 // ================= RAKENNELMIEN MALLIT =================
 function makeStructMesh(kind) {
-  const g = new THREE.Group(); const t = new THREE.Group(); t.position.y = .12;
-  const base = () => g.add(mesh(new THREE.CylinderGeometry(.36, .4, .12, 6), MAT.base, 0, .06, 0));
+  const g = new THREE.Group(); const t = new THREE.Group(); t.name = 't';
   if (kind === 'mg') {
-    base(); g.add(t);
-    t.add(mesh(new THREE.BoxGeometry(.26, .18, .26), MAT.fin, 0, .09, 0));
-    const b = mesh(new THREE.CylinderGeometry(.03, .03, .38, 5), MAT.dark, .25, .13, 0); b.rotation.z = Math.PI / 2; t.add(b);
+    // PKM-konekivääri kolmijalalla, ampuja ja apulainen hiekkasäkkipesäkkeessä
+    pit(g, .3); sandRing(g, .36, 13, 2); g.add(t);
+    for (const [x, z] of [[.1, .07], [.1, -.07], [-.06, 0]]) Rod(t, [.03, .1, 0], [x, .005, z], .007, MAT.dark);
+    Bx(t, .15, .032, .03, MAT.dark, .03, .11, 0); Tube(t, .009, .007, .14, MAT.dark, .1, .115, 0);
+    Bx(t, .06, .028, .018, MAT.wood, -.07, .103, 0); Bx(t, .045, .04, .035, MAT.finG2, .02, .085, .04);
+    soldier(t, -.15, 0, 0, FIN, 'prone');
+    soldier(g, -.13, .2, .4, FIN, 'kneel');
   } else if (kind === 'mortar') {
-    base(); g.add(t);
-    t.add(mesh(new THREE.BoxGeometry(.3, .05, .3), MAT.fin, 0, .03, 0));
-    const tube = mesh(new THREE.CylinderGeometry(.07, .08, .55, 7), MAT.metal, .08, .28, 0); tube.rotation.z = -.7; t.add(tube);
-    const leg = mesh(new THREE.CylinderGeometry(.015, .015, .3, 4), MAT.dark, .14, .12, .08); leg.rotation.x = .4; t.add(leg);
+    // 120 KRH 92: pohjalevy, putki, kaksijalka, miehistö ja ammuslaatikot
+    pit(g, .32); sandRing(g, .38, 14, 1); g.add(t);
+    Cy(t, .075, .085, .018, 8, MAT.dark, 0, .01, 0);
+    const tube = new THREE.Group(); tube.position.set(0, .02, 0); tube.rotation.z = .95; t.add(tube);
+    Tube(tube, .03, .027, .42, MAT.finG2, 0, 0, 0, 8); Tube(tube, .034, .034, .025, MAT.dark, .4, 0, 0, 8);
+    for (const zz of [-.08, .08]) Rod(t, [.15, .19, 0], [.21, .005, zz], .008, MAT.dark);
+    Bx(t, .03, .03, .03, MAT.dark, .12, .2, .04);
+    soldier(g, -.12, .17, -.3, FIN, 'kneel'); soldier(g, -.06, -.2, .6, FIN, 'stand');
+    for (const [x, z] of [[-.22, -.06], [-.22, .04]]) Bx(g, .09, .045, .06, MAT.finG2, x, .023, z);
   } else if (kind === 'atgm') {
-    base(); g.add(t);
-    for (const a of [0, 2.1, 4.2]) { const l = mesh(new THREE.CylinderGeometry(.015, .015, .32, 4), MAT.dark, Math.cos(a) * .08, .13, Math.sin(a) * .08); l.rotation.set(Math.sin(a) * .35, 0, -Math.cos(a) * .35); t.add(l); }
-    t.add(mesh(new THREE.BoxGeometry(.42, .13, .13), MAT.fin, .05, .32, 0));
-    t.add(mesh(new THREE.BoxGeometry(.1, .1, .16), MAT.dark, -.12, .32, 0));
+    // Spike-MR -ohjus kolmijalalla, ampuja polvillaan
+    pit(g, .3); sandRing(g, .36, 13, 2); g.add(t);
+    for (const [x, z] of [[.08, .08], [.08, -.08], [-.08, 0]]) Rod(t, [0, .13, 0], [x, .005, z], .007, MAT.dark);
+    Tube(t, .032, .032, .34, MAT.finG2, -.13, .16, 0, 8); Bx(t, .07, .06, .055, MAT.dark, -.02, .16, -.06);
+    Bx(t, .03, .03, .03, MAT.glass, -.02, .17, -.09);
+    soldier(t, -.21, .03, 0, FIN, 'kneel');
+    Tube(g, .03, .03, .3, MAT.finG2, -.2, .03, .2, 8);
   } else if (kind === 'aa') {
-    base(); g.add(t);
-    t.add(mesh(new THREE.BoxGeometry(.32, .16, .32), MAT.fin, 0, .08, 0));
-    for (const zz of [-.07, .07]) { const b = mesh(new THREE.CylinderGeometry(.025, .025, .45, 5), MAT.dark, .14, .3, zz); b.rotation.z = -.8; t.add(b); }
-    const radar = new THREE.Group(); radar.position.set(-.1, .2, 0); g.add(radar);
-    radar.add(mesh(new THREE.CylinderGeometry(.02, .02, .2, 4), MAT.dark, 0, .1, 0));
-    radar.add(mesh(new THREE.BoxGeometry(.04, .14, .3), MAT.white, 0, .24, 0));
+    // 23 ItK 61 -kaksoisilmatorjuntatykki ja tutka
+    pit(g, .34); sandRing(g, .4, 15, 1); g.add(t);
+    Cy(t, .19, .19, .03, 3, MAT.finG2, 0, .045, 0, 0, Math.PI / 6, 0);
+    Cy(t, .05, .07, .08, 6, MAT.finG2, 0, .1, 0);
+    Bx(t, .13, .07, .16, MAT.finG, 0, .17, 0);
+    const gun = new THREE.Group(); gun.position.set(.04, .19, 0); gun.rotation.z = .55; t.add(gun);
+    for (const zz of [-.035, .035]) { Tube(gun, .013, .01, .44, MAT.dark, 0, 0, zz); Tube(gun, .018, .018, .03, MAT.dark, .41, 0, zz); }
+    for (const zz of [-.1, .1]) Bx(gun, .1, .06, .04, MAT.finG2, -.02, -.01, zz);
+    soldier(t, -.12, 0, 0, FIN, 'kneel');
+    for (const zz of [-.17, .17]) Wheel(g, .06, .03, MAT.rubber, -.04, .06, zz);
+    Cy(g, .012, .015, .32, 5, MAT.dark, -.3, .16, .3); Rod(g, [-.3, .1, .3], [-.36, 0, .36], .006, MAT.dark); Rod(g, [-.3, .1, .3], [-.24, 0, .36], .006, MAT.dark);
+    const radar = new THREE.Group(); radar.name = 'radar'; radar.position.set(-.3, .33, .3); g.add(radar);
+    Bx(radar, .03, .08, .22, MAT.white); Bx(radar, .02, .02, .02, MAT.dark, -.02, -.03, 0);
     g.userData.radar = radar;
   } else if (kind === 'k9') {
-    g.add(t); t.position.y = 0;
-    t.add(mesh(new THREE.BoxGeometry(.62, .16, .4), MAT.finG, 0, .14, 0));
-    for (const z of [-.18, .18]) t.add(mesh(new THREE.BoxGeometry(.64, .1, .08), MAT.dark, 0, .06, z));
-    t.add(mesh(new THREE.BoxGeometry(.32, .16, .32), MAT.finG2, -.06, .3, 0));
-    const b = mesh(new THREE.CylinderGeometry(.035, .04, .7, 6), MAT.dark, .3, .42, 0); b.rotation.z = -1.15; t.add(b);
+    // K9 Moukari -panssarihaupitsi: tela-alusta ja pyörivä torni
+    Side(g, [[-.34, .07], [.27, .07], [.35, .13], [.31, .19], [-.34, .19]], .3, MAT.finG);
+    tracks(g, .72, .18, .07, .12, 6, .04);
+    Bx(g, .1, .03, .06, MAT.finG2, .22, .2, .09);
+    g.add(t); t.position.y = .19;
+    Side(t, [[-.26, 0], [.08, 0], [.15, .06], [.11, .15], [-.26, .15]], .3, MAT.finG2, -.04);
+    const br = new THREE.Group(); br.position.set(.1, .08, 0); br.rotation.z = .12; t.add(br);
+    Tube(br, .026, .022, .5, MAT.finG, 0, 0, 0, 8); Bx(br, .05, .04, .05, MAT.dark, .51, 0, 0);
+    Cy(t, .035, .04, .03, 8, MAT.finG, -.12, .165, .07); Bx(t, .05, .04, .04, MAT.dark, -.02, .17, -.08);
+    finFlag(t, -.18, .08, .152); finFlag(t, -.18, .08, -.152);
   } else if (kind === 'nasams') {
-    base(); g.add(t);
-    t.add(mesh(new THREE.BoxGeometry(.3, .08, .3), MAT.fin, 0, .04, 0));
-    const pod = new THREE.Group(); pod.position.set(0, .18, 0); pod.rotation.z = .6; t.add(pod);
-    pod.add(mesh(new THREE.BoxGeometry(.46, .16, .26), MAT.finG, 0, 0, 0));
-    for (const z of [-.06, .06]) for (const y of [-.04, .04]) pod.add(mesh(new THREE.CylinderGeometry(.025, .025, .02, 6).rotateZ(Math.PI / 2), MAT.dark, .235, y, z));
-    const radar = new THREE.Group(); radar.position.set(-.26, .12, .2); g.add(radar);
-    radar.add(mesh(new THREE.BoxGeometry(.04, .2, .16), MAT.white, 0, .1, 0));
+    // NASAMS: kuuden ohjuksen laukaisualusta perävaunulla + Sentinel-tutka
+    Bx(g, .46, .04, .24, MAT.finG2, 0, .08, 0);
+    for (const x of [-.08, .08]) for (const zz of [-.14, .14]) Wheel(g, .05, .03, MAT.rubber, x, .05, zz);
+    for (const [x, z] of [[.22, .14], [.22, -.14], [-.22, .14], [-.22, -.14]]) Rod(g, [x * .8, .08, z * .8], [x, .005, z * 1.3], .008, MAT.dark);
+    g.add(t); t.position.y = .1;
+    Bx(t, .1, .06, .14, MAT.dark, 0, .03, 0);
+    const pod = new THREE.Group(); pod.position.set(-.04, .1, 0); pod.rotation.z = .55; t.add(pod);
+    for (const zz of [-.075, 0, .075]) for (const yy of [-.035, .035]) { Bx(pod, .44, .065, .068, MAT.finG, 0, yy, zz); Bx(pod, .01, .055, .058, MAT.dark, .222, yy, zz, 0, 0, 0, false); }
+    Bx(g, .16, .05, .16, MAT.finG2, -.32, .06, .3); for (const zz of [.24, .36]) Wheel(g, .035, .02, MAT.rubber, -.32, .035, zz);
+    const radar = new THREE.Group(); radar.name = 'radar'; radar.position.set(-.32, .12, .3); g.add(radar);
+    Bx(radar, .03, .03, .04, MAT.dark, 0, .015, 0); Bx(radar, .03, .14, .17, MAT.finG, .015, .1, 0); Bx(radar, .004, .12, .15, MAT.dark, .032, .1, 0, 0, 0, 0, false);
     g.userData.radar = radar;
   } else if (kind === 'leo') {
-    g.add(mesh(new THREE.BoxGeometry(.66, .17, .4), MAT.finG, 0, .12, 0));
-    for (const z of [-.19, .19]) g.add(mesh(new THREE.BoxGeometry(.68, .11, .07), MAT.dark, 0, .06, z));
-    g.add(t); t.position.y = .22;
-    t.add(mesh(new THREE.BoxGeometry(.36, .13, .3), MAT.finG2, -.04, .06, 0));
-    t.add(mesh(new THREE.BoxGeometry(.08, .03, .12), MAT.blue, -.16, .135, 0));
-    const b = mesh(new THREE.CylinderGeometry(.03, .03, .6, 6), MAT.dark, .42, .07, 0); b.rotation.z = Math.PI / 2; t.add(b);
+    // Leopard 2A6: kiilapanssaroitu torni ja pitkä L55-tykki
+    Side(g, [[-.36, .07], [.28, .07], [.36, .12], [.34, .15], [.2, .2], [-.36, .2]], .32, MAT.finG);
+    tracks(g, .74, .18, .07, .12, 7, .036);
+    for (const s of [-1, 1]) Bx(g, .6, .07, .014, MAT.finG2, -.02, .145, s * .222);
+    Bx(g, .12, .015, .3, MAT.finG2, -.3, .205, 0);
+    g.add(t); t.position.y = .2;
+    Top(t, [[-.24, -.15], [.08, -.165], [.24, -.06], [.14, -.03], [.14, .03], [.24, .06], [.08, .165], [-.24, .15]], .12, MAT.finG2);
+    Bx(t, .08, .08, .28, MAT.dark, -.28, .05, 0);
+    Bx(t, .08, .07, .07, MAT.finG2, .17, .06, 0);
+    Tube(t, .022, .018, .62, MAT.finG2, .2, .065, 0, 8); Tube(t, .026, .026, .03, MAT.dark, .78, .065, 0, 8);
+    Bx(t, .05, .05, .04, MAT.dark, -.02, .145, .08); Bx(t, .035, .04, .035, MAT.glass, .07, .14, -.09);
+    Cy(t, .035, .04, .025, 8, MAT.finG2, -.1, .13, -.07);
+    finFlag(t, -.14, .07, .156); finFlag(t, -.14, .07, -.156);
   } else if (kind === 'amv') {
-    g.add(mesh(new THREE.BoxGeometry(.6, .18, .3), MAT.finG, 0, .17, 0));
-    g.add(mesh(new THREE.BoxGeometry(.16, .1, .28), MAT.finG2, .26, .14, 0));
-    for (const x of [-.21, -.07, .07, .21]) for (const z of [-.15, .15]) g.add(mesh(new THREE.CylinderGeometry(.06, .06, .05, 8).rotateX(Math.PI / 2), MAT.dark, x, .07, z));
-    g.add(t); t.position.y = .27;
-    t.add(mesh(new THREE.BoxGeometry(.16, .07, .14), MAT.finG2, 0, .03, 0));
-    t.add(mesh(new THREE.BoxGeometry(.06, .03, .1), MAT.blue, -.07, .075, 0));
-    const b = mesh(new THREE.CylinderGeometry(.015, .015, .26, 5), MAT.dark, .17, .04, 0); b.rotation.z = Math.PI / 2; t.add(b);
+    // Patria AMV: 8×8-pyörät, viisto keula ja kauko-ohjattu asejärjestelmä
+    Side(g, [[-.32, .08], [.22, .08], [.33, .14], [.3, .2], [.14, .245], [-.32, .245]], .28, MAT.finG);
+    for (const x of [-.22, -.09, .06, .19]) for (const s of [-1, 1]) { Wheel(g, .058, .05, MAT.rubber, x, .058, s * .145); Wheel(g, .03, .052, MAT.finG2, x, .058, s * .146, 6); }
+    Bx(g, .06, .035, .1, MAT.glass, .2, .23, 0, 0, 0, -.5);
+    Bx(g, .1, .02, .1, MAT.finG2, -.2, .255, .06); Bx(g, .1, .02, .1, MAT.finG2, -.2, .255, -.06);
+    finFlag(g, -.1, .17, .142); finFlag(g, -.1, .17, -.142);
+    g.add(t); t.position.y = .245;
+    Bx(t, .1, .06, .09, MAT.finG2, 0, .03, 0); Tube(t, .012, .01, .24, MAT.dark, .04, .04, 0);
+    Bx(t, .04, .035, .03, MAT.dark, -.01, .07, -.05); Bx(t, .05, .04, .03, MAT.finG2, -.02, .04, .055);
   } else if (kind === 'obstacle') {
-    const c = new THREE.ConeGeometry(.15, .32, 4);
-    for (const [x, z] of [[-.22, -.22], [.22, -.22], [-.22, .22], [.22, .22], [0, 0]]) g.add(mesh(c, MAT.stone, x, .16, z));
+    // hammaskivet: porrastetut betonipyramidit
+    const c = new THREE.CylinderGeometry(.045, .11, .17, 4);
+    for (const [x, z] of [[-.26, -.3], [-.26, 0], [-.26, .3], [0, -.15], [0, .15], [.26, -.3], [.26, 0], [.26, .3]]) { const m = mesh(c, MAT.concrete, x, .085, z); m.rotation.y = Math.PI / 4 + (hash2(x * 50, z * 50) - .5) * .3; g.add(m); }
   } else if (kind === 'apmine') {
-    const d = new THREE.CylinderGeometry(.05, .05, .05, 6);
-    for (const [x, z] of [[-.22, -.18], [.15, -.24], [-.05, .12], [.24, .16], [-.25, .22]]) g.add(mesh(d, MAT.mine, x, .025, z, false));
-    g.add(mesh(new THREE.CylinderGeometry(.012, .012, .3, 4), MAT.dark, .32, .15, -.3));
-    g.add(mesh(new THREE.ConeGeometry(.08, .1, 3).rotateX(Math.PI).rotateZ(Math.PI / 2), MAT.accent, .32, .3, -.3));
+    const d = new THREE.CylinderGeometry(.04, .045, .03, 7);
+    for (const [x, z] of [[-.22, -.18], [.15, -.24], [-.05, .12], [.24, .16], [-.25, .22], [.05, -.05]]) g.add(mesh(d, MAT.finG2, x, .012, z, false));
+    for (const [x, z] of [[.36, -.36], [.36, .36]]) { Cy(g, .01, .012, .26, 4, MAT.wood, x, .13, z); Cy(g, .07, .07, .008, 3, MAT.red, x, .23, z, Math.PI / 2, Math.PI / 2, 0); }
+    Bx(g, .006, .006, .72, MAT.red, .36, .2, 0, 0, 0, 0, false);
   } else if (kind === 'mine') {
-    const d = new THREE.CylinderGeometry(.09, .09, .04, 8);
-    for (const [x, z] of [[-.2, -.15], [.18, -.2], [0, .2]]) g.add(mesh(d, MAT.mine, x, .02, z, false));
-    g.add(mesh(new THREE.CylinderGeometry(.012, .012, .3, 4), MAT.dark, .3, .15, .3));
-    g.add(mesh(new THREE.BoxGeometry(.02, .1, .14), MAT.warn, .3, .3, .3));
+    const d = new THREE.CylinderGeometry(.085, .09, .035, 9);
+    for (const [x, z] of [[-.2, -.15], [.18, -.2], [0, .2]]) { g.add(mesh(d, MAT.finG2, x, .015, z, false)); Cy(g, .025, .025, .015, 6, MAT.dark, x, .038, z, 0, 0, 0, false); }
+    Cy(g, .012, .012, .3, 4, MAT.wood, .32, .15, .32); Bx(g, .02, .1, .14, MAT.warn, .32, .27, .32);
   }
   g.userData.turret = t;
-  return g;
+  return bake(g);
 }
 function addFortMesh(s) {
   if (s.fort === 1) {
@@ -956,64 +1110,93 @@ function addLevelMark(s) {
 // ================= YKSIKKÖMALLIT =================
 const proto = {};
 {
+  // jalkaväkiryhmä (valkoiset tunnistusnauhat käsivarsissa)
   let g = new THREE.Group();
-  const body = new THREE.BoxGeometry(.09, .2, .09), head = new THREE.BoxGeometry(.07, .07, .07);
-  for (const [x, z] of [[0, 0], [-.14, .1], [-.12, -.12]]) { g.add(mesh(body, MAT.inf, x, .1, z)); g.add(mesh(head, MAT.enemy, x, .24, z)); }
-  proto.inf = g;
+  for (const [x, z, st] of [[0, 0, .25], [-.15, .1, -.2], [-.13, -.12, .15]]) soldier(g, x, z, 0, RU, 'stand', st);
+  proto.inf = bake(g);
+  // BMP-2: terävä keula, pieni torni ja 30 mm tykki
   g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(.52, .18, .32), MAT.enemy, 0, .13, 0));
-  g.add(mesh(new THREE.BoxGeometry(.32, .02, .33), MAT.accent, -.05, .23, 0));
-  const tb = new THREE.Group(); tb.position.y = .24; tb.name = 't'; g.add(tb);
-  tb.add(mesh(new THREE.BoxGeometry(.18, .09, .16), MAT.enemy2, 0, .05, 0));
-  const br = mesh(new THREE.CylinderGeometry(.018, .018, .3, 4), MAT.dark, .18, .06, 0); br.rotation.z = Math.PI / 2; tb.add(br);
-  proto.bmp = g;
+  Side(g, [[-.28, .065], [.18, .065], [.3, .13], [.08, .2], [-.28, .2]], .26, MAT.ru);
+  tracks(g, .58, .155, .05, .105, 6, .032);
+  Bx(g, .08, .02, .06, MAT.ru2, .05, .205, -.07); Bx(g, .12, .03, .02, MAT.white, -.18, .18, .131, 0, 0, 0, false); Bx(g, .12, .03, .02, MAT.white, -.18, .18, -.131, 0, 0, 0, false);
+  zMark(g, -.18, .203, 0, .9);
+  let tt = new THREE.Group(); tt.position.set(-.02, .2, 0); tt.name = 't'; g.add(tt);
+  Cy(tt, .075, .092, .06, 8, MAT.ru2, 0, .03, 0); Tube(tt, .01, .008, .32, MAT.dark, .06, .04, 0);
+  Tube(tt, .016, .016, .15, MAT.ru2, -.05, .08, .045); Bx(tt, .03, .03, .03, MAT.glass, .03, .07, -.04);
+  proto.bmp = bake(g);
+  // T-72/T-90: matala kupolitorni, reaktiivipanssari ja polttoainetynnyrit
   g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(.64, .2, .42), MAT.enemy, 0, .14, 0));
-  for (const z of [-.2, .2]) g.add(mesh(new THREE.BoxGeometry(.66, .12, .08), MAT.dark, 0, .07, z));
-  const tt = new THREE.Group(); tt.position.y = .25; tt.name = 't'; g.add(tt);
-  tt.add(mesh(new THREE.BoxGeometry(.34, .14, .3), MAT.enemy2, -.02, .07, 0));
-  tt.add(mesh(new THREE.BoxGeometry(.2, .02, .31), MAT.accent, -.02, .145, 0));
-  const tb2 = mesh(new THREE.CylinderGeometry(.03, .03, .55, 5), MAT.dark, .38, .08, 0); tb2.rotation.z = Math.PI / 2; tt.add(tb2);
-  proto.tank = g;
+  Side(g, [[-.34, .065], [.26, .065], [.34, .12], [.32, .14], [.18, .19], [-.34, .19]], .32, MAT.ru);
+  tracks(g, .7, .185, .07, .12, 6, .045, MAT.dark, MAT.ru2);
+  for (const s of [-1, 1]) Bx(g, .64, .012, .085, MAT.ru2, -.02, .13, s * .19);
+  for (const zz of [-.07, .07]) Wheel(g, .04, .1, MAT.ru2, -.38, .16, zz, 8);
+  for (const s of [-1, 1]) for (let k = 0; k < 4; k++) Bx(g, .045, .02, .06, MAT.ru2, .25 - k * .002, .17 - k * .012, s * (k * .055 - .08) * 1, 0, 0, -.5);
+  tt = new THREE.Group(); tt.position.set(-.04, .19, 0); tt.name = 't'; g.add(tt);
+  Cy(tt, .12, .16, .09, 10, MAT.ru, 0, .045, 0).scale.set(1.12, 1, 1); Cy(tt, .07, .12, .035, 10, MAT.ru, -.01, .107, 0);
+  for (const s of [-1, 1]) Bx(tt, .07, .05, .11, MAT.ru2, .12, .06, s * .08, 0, s * .45, 0);
+  Bx(tt, .06, .06, .06, MAT.ru2, .15, .055, 0);
+  Tube(tt, .024, .019, .62, MAT.ru2, .17, .06, 0, 8); Tube(tt, .03, .03, .08, MAT.ru2, .42, .06, 0, 8);
+  Cy(tt, .03, .034, .03, 7, MAT.ru2, -.05, .135, -.06); Tube(tt, .006, .006, .1, MAT.dark, -.05, .16, -.06);
+  zMark(tt, -.04, .126, .06, .9);
+  proto.tank = bake(g);
+  // Shahed-136 (Geran-2): deltasiipi, kärkievät ja työntävä potkuri
   g = new THREE.Group();
-  const bd = mesh(new THREE.CylinderGeometry(.04, .03, .34, 5), MAT.enemy, 0, 0, 0); bd.rotation.z = Math.PI / 2; g.add(bd);
-  g.add(mesh(new THREE.BoxGeometry(.1, .02, .52), MAT.enemy2, -.02, 0, 0));
-  g.add(mesh(new THREE.BoxGeometry(.06, .025, .2), MAT.accent, -.15, 0, 0));
-  g.add(mesh(new THREE.BoxGeometry(.06, .12, .02), MAT.enemy2, -.15, .05, 0));
-  proto.drone = g;
-  // taisteluhelikopteri
+  Top(g, [[.1, -.02], [.1, .02], [-.12, .27], [-.18, .27], [-.15, .03], [-.15, -.03], [-.18, -.27], [-.12, -.27]], .014, MAT.shahed, 0, -.007, 0);
+  Tube(g, .028, .034, .3, MAT.shahed, -.15, 0, 0, 7); Cy(g, 0, .034, .07, 7, MAT.shahed, .185, 0, 0, 0, 0, -Math.PI / 2);
+  for (const s of [-1, 1]) Bx(g, .05, .075, .008, MAT.shahed, -.15, .025, s * .27);
+  Bx(g, .008, .12, .014, MAT.dark, -.17, 0, 0); Bx(g, .008, .014, .12, MAT.dark, -.17, 0, 0);
+  proto.drone = bake(g);
+  // taisteluhelikopteri (Mi-28/Mi-24-tyyppinen): tandemohjaamo, siivekkeet ja rakettiputkit
   g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(.42, .16, .16), MAT.enemy, 0, 0, 0));
-  g.add(mesh(new THREE.BoxGeometry(.12, .1, .12), MAT.enemy2, .22, -.01, 0));
-  g.add(mesh(new THREE.BoxGeometry(.5, .05, .05), MAT.enemy, -.4, .03, 0));
-  g.add(mesh(new THREE.BoxGeometry(.04, .14, .1), MAT.accent, -.64, .07, 0));
-  g.add(mesh(new THREE.BoxGeometry(.06, .02, .4), MAT.enemy2, .02, -.06, 0));
-  const rotor = new THREE.Group(); rotor.name = 'r'; rotor.position.y = .13; g.add(rotor);
-  rotor.add(mesh(new THREE.BoxGeometry(1.0, .01, .05), MAT.dark, 0, 0, 0, false));
-  rotor.add(mesh(new THREE.BoxGeometry(.05, .01, 1.0), MAT.dark, 0, 0, 0, false));
-  proto.heli = g;
-  // häirintäasema
+  Side(g, [[.34, -.03], [.3, -.07], [-.1, -.08], [-.2, -.03], [-.22, .06], [-.05, .1], [.08, .1], [.13, .06], [.24, .05], [.31, .02]], .15, MAT.heliG);
+  Bx(g, .08, .045, .11, MAT.glass, .25, .065, 0, 0, 0, -.45); Bx(g, .1, .05, .12, MAT.glass, .12, .11, 0, 0, 0, -.35);
+  Bx(g, .24, .07, .19, MAT.ru2, -.06, .12, 0); for (const s of [-1, 1]) Tube(g, .03, .03, .06, MAT.dark, -.2, .12, s * .07);
+  Tube(g, .018, .04, .48, MAT.heliG, -.68, .03, 0, 6);
+  Side(g, [[-.7, .02], [-.62, .04], [-.64, .17], [-.72, .18]], .016, MAT.ru2);
+  Bx(g, .1, .01, .14, MAT.ru2, -.58, .04, 0);
+  const tr = new THREE.Group(); tr.position.set(-.67, .12, .03); g.add(tr);
+  Bx(tr, .012, .16, .006, MAT.dark, 0, 0, 0); Bx(tr, .16, .012, .006, MAT.dark, 0, 0, 0);
+  Bx(g, .08, .012, .44, MAT.ru2, -.03, .0, 0, -.0, 0, 0);
+  for (const s of [-1, 1]) { Tube(g, .026, .026, .13, MAT.ru2, -.1, -.03, s * .15, 7); Tube(g, .012, .012, .14, MAT.dark, -.1, -.03, s * .21); }
+  Cy(g, .025, .03, .04, 6, MAT.dark, .26, -.08, 0); Tube(g, .006, .006, .08, MAT.dark, .26, -.09, 0);
+  for (const s of [-1, 1]) Rod(g, [.15, -.07, s * .05], [.15, -.12, s * .07], .006, MAT.dark);
+  Cy(g, .025, .03, .06, 6, MAT.dark, -.04, .19, 0);
+  const rotor = new THREE.Group(); rotor.name = 'r'; rotor.position.y = .21; g.add(rotor);
+  Cy(rotor, .03, .03, .02, 6, MAT.dark, 0, 0, 0, 0, 0, 0, false);
+  for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; Bx(rotor, .5, .008, .04, MAT.dark, Math.cos(a) * .26, 0, -Math.sin(a) * .26, 0, a, 0, false); }
+  proto.heli = bake(g);
+  // häirintäasema KamAZ-alustalla: ohjaamo, laitekontti, masto ja lautasantenni
   g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(.5, .2, .3), MAT.enemy, 0, .16, 0));
-  for (const x of [-.16, .16]) for (const z of [-.15, .15]) g.add(mesh(new THREE.CylinderGeometry(.06, .06, .05, 8).rotateX(Math.PI / 2), MAT.dark, x, .06, z));
-  g.add(mesh(new THREE.CylinderGeometry(.015, .015, .5, 4), MAT.dark, -.1, .5, 0));
-  const dsh = mesh(new THREE.CylinderGeometry(.13, .05, .05, 8), MAT.purple, .1, .34, 0); dsh.rotation.z = .6; dsh.name = 'd'; g.add(dsh);
+  Bx(g, .62, .035, .2, MAT.dark, 0, .085, 0);
+  Bx(g, .13, .13, .25, MAT.ru, .21, .17, 0); Bx(g, .006, .05, .21, MAT.glass, .278, .2, 0, 0, 0, 0, false);
+  Bx(g, .34, .17, .27, MAT.ru2, -.08, .19, 0); zMark(g, -.08, .278, 0, 1.1);
+  for (const x of [.21, -.07, -.2]) for (const s of [-1, 1]) Wheel(g, .055, .045, MAT.rubber, x, .055, s * .12);
+  Cy(g, .012, .016, .44, 5, MAT.dark, -.2, .49, 0);
+  for (const yy of [.6, .67]) Bx(g, .006, .006, .2, MAT.dark, -.2, yy, 0, 0, 0, 0, false);
+  const dsh = mesh(new THREE.CylinderGeometry(.13, .04, .05, 10), MAT.purple, .02, .35, 0); dsh.rotation.z = .6; dsh.name = 'd'; g.add(dsh);
   const ewRing = new THREE.Mesh(new THREE.RingGeometry(3.85, 4, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xb27ce0, transparent: true, opacity: .45, depthWrite: false, side: THREE.DoubleSide }));
   ewRing.position.y = .06; ewRing.name = 'ring'; g.add(ewRing);
-  proto.ew = g;
-  // erikoisjoukot
+  proto.ew = bake(g);
+  // erikoisjoukot: tummat asut ja kasvosuojukset
   g = new THREE.Group();
-  for (const [x, z] of [[0, 0], [-.12, .1], [-.12, -.1], [-.22, 0]]) { g.add(mesh(body, MAT.spec, x, .1, z)); g.add(mesh(head, MAT.accent, x, .24, z)); }
-  proto.spec = g;
-  // tykistöpatteri
+  for (const [x, z, st] of [[0, 0, .2], [-.12, .11, -.25], [-.12, -.1, .25], [-.24, 0, -.15]]) soldier(g, x, z, 0, RU_SPEC, 'stand', st);
+  proto.spec = bake(g);
+  // tykistöpatteri: kaksi 152 mm Msta-B -hinattavaa haupitsia, ammusrekka ja laatikot
   g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(1.1, .03, .9), MAT.inf, 0, .02, 0, false));
+  Bx(g, 1.1, .02, .9, MAT.dirt, 0, .01, 0, 0, 0, 0, false);
   for (const z of [-.22, .22]) {
-    g.add(mesh(new THREE.BoxGeometry(.32, .14, .2), MAT.enemy, .05, .1, z));
-    const b = mesh(new THREE.CylinderGeometry(.03, .035, .6, 6), MAT.dark, -.22, .26, z); b.rotation.z = 1.1; g.add(b);
+    for (const s of [-1, 1]) Wheel(g, .07, .04, MAT.rubber, .02, .07, z + s * .1);
+    Bx(g, .04, .1, .2, MAT.ru, .07, .13, z);
+    const br = new THREE.Group(); br.position.set(.02, .14, z); br.rotation.z = .45; g.add(br);
+    Tube(br, .03, .022, .6, MAT.ru2, -.12, 0, 0, 7); Bx(br, .05, .035, .045, MAT.dark, .48, 0, 0); Bx(br, .2, .05, .06, MAT.ru, -.12, -.03, 0);
+    for (const s of [-1, 1]) Rod(g, [0, .09, z + s * .03], [-.42, .01, z + s * .11], .014, MAT.ru);
   }
-  g.add(mesh(new THREE.BoxGeometry(.18, .12, .5), MAT.accent, .38, .08, 0));
-  proto.battery = g;
+  Bx(g, .12, .12, .2, MAT.ru, -.46, .12, 0); Bx(g, .005, .045, .17, MAT.glass, -.522, .15, 0, 0, 0, 0, false); Bx(g, .24, .1, .22, MAT.ru2, -.27, .11, 0);
+  for (const x of [-.46, -.22]) for (const s of [-1, 1]) Wheel(g, .045, .03, MAT.rubber, x, .045, s * .11);
+  for (const [x, z] of [[-.2, -.4], [-.1, -.4], [-.2, .4]]) Bx(g, .08, .04, .06, MAT.ru2, x, .03, z);
+  zMark(g, -.27, .162, 0, 1.1);
+  const bo = new THREE.Group(); g.rotation.y = Math.PI; bo.add(g);   // tykit ampuvat länteen
+  proto.battery = bake(bo);
   // poro
   g = new THREE.Group();
   g.add(mesh(new THREE.BoxGeometry(.34, .15, .14), MAT.deer, 0, .3, 0));
@@ -1028,7 +1211,7 @@ const proto = {};
   const legG = new THREE.BoxGeometry(.03, .23, .03);
   for (const [x, z] of [[.12, .05], [.12, -.05], [-.12, .05], [-.12, -.05]]) g.add(mesh(legG, MAT.deer, x, .115, z));
   g.add(mesh(new THREE.BoxGeometry(.04, .04, .05), MAT.deerL, -.18, .34, 0));
-  proto.deer = g;
+  proto.deer = bake(g);
 }
 
 // ================= EFEKTIT =================

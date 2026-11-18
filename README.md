@@ -11,6 +11,7 @@
 ```
 src/main.js       pelimoottori (maasto, reitinhaku, tornit, viholliset, UI, strateginen kartta)
 src/sectors.js    sektoreiden asetukset ja Suomen kartan ääriviivat
+src/icons.js      rakennusten ja tulituen SVG-kuvakkeet
 template.html     HTML-pohja ja tyylit
 assets/           kansikuva (cover.jpg) ja Oswald-fontti, upotetaan buildissa
 build.mjs         build-skripti (esbuild) → docs/index.html

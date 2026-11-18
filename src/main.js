@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SECTORS, FIN_OUTLINE, BORDER_LINE, CITIES } from './sectors.js';
+import { ICONS } from './icons.js';
 
 // ================= PERUSVAKIOT =================
 const W = 30, H = 18, BORDER = 24, N = W * H, INF = 1e9;
@@ -1253,7 +1254,8 @@ function toast(msg, kind = 'info', ms = 3200) {
 const toolEls = {};
 for (const [k, d] of Object.entries(DEFS)) {
   const b = document.createElement('button'); b.className = 'tool';
-  b.innerHTML = `<b>${d.short}</b><span>${d.name.split(' ').slice(-1)[0]}</span><small>${d.cost} €</small>`;
+  b.title = `${d.name} – ${d.cost} €`;
+  b.innerHTML = `<span class="ico">${ICONS[k]}</span><span>${(w => w[0].toUpperCase() + w.slice(1))(d.name.split(' ').slice(-1)[0])}</span><small>${d.cost} €</small>`;
   b.onclick = () => setTool(tool === k ? null : k);
   $('tools').appendChild(b); toolEls[k] = b;
 }
@@ -1261,7 +1263,7 @@ function setTool(k) {
   if (k && supportMode) { supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false; }
   tool = k; pendingTile = -1; hl.visible = false; ring.visible = ringIn.visible = false;
   for (const [kk, el] of Object.entries(toolEls)) el.classList.toggle('sel', kk === k);
-  if (k) { select(null); $('hint').hidden = false; $('hint').innerHTML = `<b>${DEFS[k].name}</b> – ${DEFS[k].desc}${TOWERS.has(k) ? ' Tunturilla +1 kantama.' : ''}<br><small>${isTouch ? 'Napauta ruutua, napauta uudelleen rakentaaksesi.' : 'Klikkaa ruutua rakentaaksesi. Esc peruu.'}</small>`; }
+  if (k) { select(null); $('hint').hidden = false; $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${DEFS[k].name}</b> – ${DEFS[k].desc}${TOWERS.has(k) ? ' Tunturilla +1 kantama.' : ''}<br><small>${isTouch ? 'Napauta ruutua, napauta uudelleen rakentaaksesi.' : 'Klikkaa ruutua rakentaaksesi. Esc peruu.'}</small>`; }
   else $('hint').hidden = true;
 }
 function select(s) {
@@ -1274,7 +1276,7 @@ function select(s) {
 function refreshPanel() {
   const s = selected; if (!s) return; const p = $('panel'); p.hidden = false;
   const refund = Math.round(s.spent * .6);
-  let html = `<h3>${s.def.name}</h3>`;
+  let html = `<h3><span class="hico">${ICONS[s.kind]}</span>${s.def.name}</h3>`;
   if (TOWERS.has(s.kind)) {
     const up = Math.round(s.def.cost * .8 * s.lvl), fc = FORT_COST[s.fort];
     const rep = Math.ceil((1 - s.hp / s.maxHp) * s.def.cost * .5);
@@ -1466,7 +1468,7 @@ function setSupportMode(k) {
   setTool(null); select(null);
   supportMode = k; pendingStrike = -1;
   $('hint').hidden = false;
-  $('hint').innerHTML = `<b>${SUPPORT[k].icon} ${SUPPORT[k].name}</b> – ${SUPPORT[k].desc}<br><small>${isTouch ? 'Napauta kohdetta, napauta uudelleen vahvistaaksesi.' : 'Klikkaa kohdetta. Esc peruu.'}</small>`;
+  $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${SUPPORT[k].name}</b> – ${SUPPORT[k].desc}<br><small>${isTouch ? 'Napauta kohdetta, napauta uudelleen vahvistaaksesi.' : 'Klikkaa kohdetta. Esc peruu.'}</small>`;
   updateSupportUI(true);
 }
 function cancelSupport() {
@@ -1566,7 +1568,8 @@ function tickSupport(dt) {
 const supEls = {};
 for (const [k, d] of Object.entries(SUPPORT)) {
   const b = document.createElement('button'); b.className = 'sup';
-  b.innerHTML = `<span class="ic">${d.icon}</span><span class="nm">${d.name}</span><span class="st"></span><i class="fill"></i>`;
+  b.title = d.desc;
+  b.innerHTML = `<span class="ic">${ICONS[k]}</span><span class="nm">${d.name}</span><span class="st"></span><i class="fill"></i>`;
   b.onclick = () => setSupportMode(k);
   $('support').appendChild(b); supEls[k] = b;
 }

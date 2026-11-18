@@ -20,12 +20,15 @@ button.primary{background:#2f6fb5;border-color:#6aaaf0;font-weight:600}
 #bottom{position:fixed;left:8px;right:8px;bottom:8px;display:flex;gap:8px;align-items:stretch}
 #tools{display:flex;gap:6px;overflow-x:auto;flex:1;padding:6px;scrollbar-width:none}
 .tool{min-width:76px;display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 8px;font-size:12px;line-height:1.2}
-.tool b{font-size:15px}.tool small{color:#ffd27a}
+.tool .ico{display:block;height:30px;color:#e8eef3}.tool .ico svg{display:block}.tool small{color:#ffd27a}
+.tool.sel .ico{color:#9fd0ff}
+.hico{display:inline-block;vertical-align:-8px;margin-right:6px;color:#e8eef3}.hico svg{width:26px;height:26px}
+#panel h3 .hico svg{width:24px;height:24px}
 .tool.sel{outline:2px solid #6aaaf0;background:#2a4560}
 .tool.poor{opacity:.45}
 #support{display:flex;gap:6px;padding:6px}
 .sup{position:relative;overflow:hidden;min-width:92px;display:flex;flex-direction:column;align-items:center;gap:0;padding:5px 8px 7px;font-size:12px;line-height:1.2}
-.sup .ic{font-size:17px}.sup .nm{font-weight:700;font-size:13px}.sup .st{font-size:11px;color:#b8c6d1;font-variant-numeric:tabular-nums}
+.sup .ic{height:26px;color:#e8eef3}.sup .ic svg{width:26px;height:26px;display:block}.sup.ready .ic{color:#9fd0ff}.sup.armed .ic{color:#ffb38a}.sup .nm{font-weight:700;font-size:13px}.sup .st{font-size:11px;color:#b8c6d1;font-variant-numeric:tabular-nums}
 .sup .fill{position:absolute;left:0;bottom:0;height:3px;background:#5ab4ff;transition:width .25s linear}
 .sup.ready{border-color:#6aaaf0;box-shadow:0 0 12px rgba(90,180,255,.45)}
 .sup.ready .st{color:#9fd0ff;font-weight:700}

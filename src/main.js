@@ -53,6 +53,7 @@ const DEFS = {
   mortar:   { name: 'Raskas kranaatinheitin', nameEn: 'Heavy mortar', descEn: 'Long range and area damage. Cannot fire at very close range.', short: 'KRH', cost: 200, range: 6.5, minRange: 1.5, interval: 3.2, dmg: 45, splash: 1.2, mult: [1, .5, .25, 0, 0], hp: 90, ground: true, desc: 'Pitkä kantama ja aluevaikutus. Ei ammu aivan lähelle.' },
   atgm:     { name: 'Panssarintorjuntaohjus', nameEn: 'Anti-tank missile', descEn: 'Destroys tanks and IFVs. Also hits helicopters.', short: 'PST', cost: 250, range: 5, interval: 2.6, dmg: 140, mult: [.4, 1, 1, 0, .6], hp: 90, ground: true, air: true, desc: 'Tuhoaa panssarivaunuja ja BMP:itä. Osuu myös helikoptereihin.' },
   aa:       { name: 'Ilmatorjunta', nameEn: 'Anti-aircraft gun', descEn: 'Shoots down drones. Weak against helicopters.', short: 'IT', cost: 180, range: 5, interval: 0.25, dmg: 9, mult: [0, 0, 0, 1, .5], hp: 80, air: true, desc: 'Ampuu lennokit alas. Helikoptereihin se tehoaa huonosti.' },
+  ito:      { name: 'Ilmatorjuntaohjus ITO 05M', nameEn: 'SAM ITO 05M (RBS 70)', descEn: 'RBS 70 short-range air-defence missile on a tripod. Hits helicopters hard and destroys drones. Air targets only.', short: 'ITO', cost: 220, range: 5.5, interval: 2.2, dmg: 80, mult: [0, 0, 0, 1, 1], hp: 70, air: true, desc: 'RBS 70 -lähi-ilmatorjuntaohjus jalustalla. Tehoaa hyvin helikoptereihin ja tuhoaa lennokit. Ampuu vain ilmamaaleja.' },
   k9:       { name: 'K9 Moukari', nameEn: 'K9 Thunder', descEn: 'Self-propelled howitzer: very long range and wide blast. Reaches enemy artillery.', short: 'K9', cost: 320, range: 9, minRange: 2.5, interval: 4.5, dmg: 85, splash: 1.6, mult: [1, .7, .45, 0, 0], hp: 110, ground: true, locked: true, desc: 'Panssarihaupitsi: erittäin pitkä kantama ja laaja iskualue. Yltää vihollisen tykistöön.' },
   nasams:   { name: 'NASAMS', nameEn: 'NASAMS', descEn: 'Surface-to-air missile system: long range, destroys helicopters and drones.', short: 'NAS', cost: 300, range: 7.5, interval: 2.4, dmg: 110, mult: [0, 0, 0, 1, 1], hp: 90, air: true, locked: true, desc: 'Ilmatorjuntaohjusjärjestelmä: pitkä kantama, tuhoaa helikopterit ja lennokit.' },
   leo:      { name: 'Leopard 2A6', nameEn: 'Leopard 2A6', descEn: 'Mobile main battle tank. Select it and tap a tile to move.', short: 'LEO', cost: 360, mobile: true, range: 4.5, interval: 2.2, dmg: 170, mult: [.5, 1, .95, 0, .3], hp: 260, armor: .45, speed: 1.3, ground: true, air: true, locked: true, desc: 'Liikkuva panssarivaunu. Valitse se ja napauta ruutua siirtääksesi.' },
@@ -62,7 +63,7 @@ const DEFS = {
   mine:     { name: 'Panssarimiinoite', nameEn: 'Anti-tank mines', descEn: 'Explodes under a vehicle (3 times). Does not block movement.', short: 'Miina', cost: 60, passive: true, charges: 3, dmg: 160, desc: 'Räjähtää ajoneuvon alla (3 kertaa). Ei estä kulkua.' },
 };
 const dn = d => L(d.name, d.nameEn || d.name), dd = d => L(d.desc, d.descEn || d.desc);
-const TOWERS = new Set(['mg', 'mortar', 'atgm', 'aa', 'k9', 'nasams']);
+const TOWERS = new Set(['mg', 'mortar', 'atgm', 'aa', 'ito', 'k9', 'nasams']);
 const MOBILE = new Set(['leo', 'amv']);
 const NONBLOCK = new Set(['mine', 'apmine']);
 const ARMOR_RED = 0;
@@ -1030,6 +1031,16 @@ function makeStructMesh(kind) {
     const radar = new THREE.Group(); radar.name = 'radar'; radar.position.set(-.3, .33, .3); g.add(radar);
     Bx(radar, .03, .08, .22, MAT.white); Bx(radar, .02, .02, .02, MAT.dark, -.02, -.03, 0);
     g.userData.radar = radar;
+  } else if (kind === 'ito') {
+    // ITO 05M (RBS 70): ohjusputki ja tähtäinyksikkö kolmijalalla, ampuja istuu jalustalla
+    pit(g, .3); sandRing(g, .36, 13, 1); g.add(t);
+    for (const [x, z] of [[.12, .1], [.12, -.1], [-.14, 0]]) Rod(t, [0, .12, 0], [x, .005, z], .008, MAT.dark);
+    Bx(t, .06, .02, .05, MAT.dark, -.1, .07, 0);
+    const lau = new THREE.Group(); lau.position.set(0, .16, 0); lau.rotation.z = .4; t.add(lau);
+    Tube(lau, .03, .03, .38, MAT.finG2, -.12, .0, .03, 8); Bx(lau, .015, .05, .05, MAT.dark, .26, 0, .03);
+    Bx(lau, .09, .07, .06, MAT.finG, -.04, -.005, -.04); Bx(lau, .03, .03, .03, MAT.glass, .02, .01, -.04);
+    soldier(t, -.15, -.02, 0, FIN, 'kneel');
+    Tube(g, .03, .03, .3, MAT.finG2, -.22, .03, .22, 8);
   } else if (kind === 'k9') {
     // K9 Moukari -panssarihaupitsi: tela-alusta ja pyörivä torni
     Side(g, [[-.34, .07], [.27, .07], [.35, .13], [.31, .19], [-.34, .19]], .3, MAT.finG);
@@ -1708,10 +1719,10 @@ function updateTowers(dt) {
       const dist = Math.hypot(tpos.x - s.x, tpos.z - s.z);
       projectiles.push({ kind: 'shell', mesh: m, from: muzzle, to: V(tgt.x, tgt.y, tgt.z), t: 0, T: 1 + dist * .08, h: 1.5 + dist * .15, dmg, splash: d.splash, mult: d.mult });
       boom(muzzle.x, muzzle.y + .1, muzzle.z, .2, 0xfff1a8); sfx(s.kind === 'k9' ? 'k9' : 'mortar');
-    } else if (s.kind === 'atgm' || s.kind === 'nasams') {
+    } else if (s.kind === 'atgm' || s.kind === 'nasams' || s.kind === 'ito') {
       const m = mesh(new THREE.CylinderGeometry(.025, .025, .18, 5).rotateZ(Math.PI / 2), MAT.white, muzzle.x, muzzle.y, muzzle.z, false); world.add(m);
-      projectiles.push({ kind: 'missile', mesh: m, pos: muzzle.clone(), target: tgt, last: tpos, dmg, mult: d.mult, puffT: 0, speed: s.kind === 'nasams' ? 10 : 7 });
-      sfx(s.kind === 'nasams' ? 'nasams' : 'missile');
+      projectiles.push({ kind: 'missile', mesh: m, pos: muzzle.clone(), target: tgt, last: tpos, dmg, mult: d.mult, puffT: 0, speed: s.kind === 'nasams' ? 10 : s.kind === 'ito' ? 9 : 7 });
+      sfx(s.kind === 'nasams' || s.kind === 'ito' ? 'nasams' : 'missile');
     }
   }
 }
@@ -2290,7 +2301,7 @@ function toast(msg, kind = 'info', ms = 3200) {
   while ($('toasts').children.length > 3) $('toasts').firstChild.remove();
 }
 const toolEls = {};
-const TOOL_LABEL = { mg: ['Konekivääri', 'Machine gun'], mortar: ['Kranaatinheitin', 'Mortar'], atgm: ['Pst-ohjus', 'Anti-tank'], aa: ['Ilmatorjunta', 'Anti-air'], obstacle: ['Hammaskivet', 'Tank traps'], apmine: ['Henkilömiinat', 'AP mines'], mine: ['Panssarimiinat', 'AT mines'], k9: ['K9 Moukari', 'K9 Thunder'], nasams: ['NASAMS', 'NASAMS'], leo: ['Leopard', 'Leopard'], amv: ['Patria AMV', 'Patria AMV'] };
+const TOOL_LABEL = { mg: ['Konekivääri', 'Machine gun'], mortar: ['Kranaatinheitin', 'Mortar'], atgm: ['Pst-ohjus', 'Anti-tank'], aa: ['Ilmatorjunta', 'Anti-air'], ito: ['It-ohjus', 'SAM'], obstacle: ['Hammaskivet', 'Tank traps'], apmine: ['Henkilömiinat', 'AP mines'], mine: ['Panssarimiinat', 'AT mines'], k9: ['K9 Moukari', 'K9 Thunder'], nasams: ['NASAMS', 'NASAMS'], leo: ['Leopard', 'Leopard'], amv: ['Patria AMV', 'Patria AMV'] };
 const toolLabel = (d, k) => L(...TOOL_LABEL[k]);
 const refundOf = x => Math.round(x.spent * (x.kept ? .3 : .6));
 function dismantle(x) {
@@ -2298,6 +2309,8 @@ function dismantle(x) {
   toast(L(`${x.def.name} purettu, +${refundOf(x)} €`, `${x.def.nameEn} dismantled, +${refundOf(x)} €`), 'ok', 1600);
   updateHUD(true); saveBattle();
 }
+// hiiren rulla vierittää työkalupalkkia sivuttain
+$('tools').addEventListener('wheel', e => { const el = $('tools'); if (el.scrollWidth > el.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { el.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
 function rebuildTools() {
   $('tools').innerHTML = '';
   for (const k in toolEls) delete toolEls[k];
@@ -2809,7 +2822,7 @@ function updateSupportUI(force) {
 
 // ================= ICEYE: TUTKASATELLIITTI JA NÄKYVYYS =================
 let iceyeT = 0, sats = [];
-const SPOT = { aa: 5, nasams: 7.5 };
+const SPOT = { aa: 5, ito: 5.5, nasams: 7.5 };
 function updateVisibility(dt) {
   if (iceyeT > 0) { iceyeT = Math.max(0, iceyeT - dt); if (iceyeT === 0) { specMark.visible = false; toast(L('ICEYE: tutkakuva vanheni.', 'ICEYE: radar image expired.'), 'info', 2000); } }
   const daylight = cond === 'clear';

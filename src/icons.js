@@ -24,6 +24,13 @@ export const ICONS = {
     <rect x="11" y="5.5" width="7" height="4.5" rx="1" stroke="none"/>
     <circle cx="16.5" cy="7.7" r="1.1" fill="#0d141b" stroke="none"/>
     <path d="M15 15.5 L8 28 M15 15.5 L22 28 M15 15.5 L15 28" fill="none" stroke-width="1.8"/>`),
+  // ITO 05M (RBS 70): ohjusputki kolmijalalla
+  ito: svg(`
+    <path d="M5 19 L27 8 L28.6 11.2 L6.6 22.2 Z" stroke="none"/>
+    <path d="M27 8 L31 6.4 L31 10 L28.6 11.2 Z" stroke="none" opacity=".8"/>
+    <rect x="10" y="17.5" width="7" height="5" rx="1" stroke="none" transform="rotate(-26 13.5 20)"/>
+    <path d="M14 22 L7 29 M14 22 L21 29 M14 22 L14 29" fill="none" stroke-width="1.8"/>
+    <path d="M24 4 L26 2.5 M28 3.5 L29 1.5" fill="none" stroke-width="1" opacity=".6"/>`),
   // Ilmatorjunta: kaksoisputket ja tutka
   aa: svg(`
     <rect x="6" y="20" width="18" height="7" rx="1.5" stroke="none"/>

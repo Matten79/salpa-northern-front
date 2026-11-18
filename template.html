@@ -60,7 +60,8 @@ button.primary{background:#2f6fb5;border-color:#6aaaf0;font-weight:600}
 .tag{margin:6px 0 12px;color:#b8c6d1;font-size:13px}
 #overlay ul{padding-left:20px;margin:8px 0}
 .row2{display:flex;gap:8px;margin-top:14px}
-#flash{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 0 0 rgba(255,140,30,0);transition:box-shadow .4s}
+#flash{position:fixed;inset:0;pointer-events:none;z-index:4;background:rgba(255,250,235,0);box-shadow:inset 0 0 0 0 rgba(255,140,30,0);transition:box-shadow .4s,background 1.4s ease-out}
+#flash.nukeflash{background:rgba(255,250,235,.95);transition:none}
 #flash.on{box-shadow:inset 0 0 90px 24px rgba(255,140,30,.65);transition:none}
 
 
@@ -109,6 +110,7 @@ button.primary{background:#2f6fb5;border-color:#6aaaf0;font-weight:600}
 #brief .okline{margin-top:8px;font-size:13px;color:#9fd0ff}
 .mtip{font-size:12px;color:#9fd0ff;margin:2px 0 6px}
 .sup.blocked{opacity:.4}
+.sup.nuke{border-color:#a83a32}.sup.nuke .ic{color:#ffd23f}.sup.nuke.ready{box-shadow:0 0 12px rgba(255,80,60,.45);border-color:#ff5a4a}.sup.nuke.ready .st{color:#ffb0a6}.sup.nuke .fill{background:#ff5a4a}
 .tool.mob .ico{color:#c9e6a8}
 .tool.demo .ico{color:#ffb38a}.tool.demo small{color:#ffb38a}.tool.demo.sel{outline-color:#ff9933;background:#4a2f22}
 
@@ -210,7 +212,7 @@ body.onmap #tut,body.onmap #toasts,body.onmap #hud,body.onmap #bottom,body.onmap
     <li><b>Tunturit</b> (Lappi): asemat näkevät tunturin laelta kauas, +1 kantama.</li>
     <li><b>Hammaskivet</b> pysäyttävät ajoneuvot. Ohjaa vihollinen tulipesiin, mutta reittiä ei saa sulkea kokonaan.</li>
     <li><b>Hyökkäykset:</b> kartalla punainen raja = kiireellinen suurhyökkäys, keltainen = uhka kasvaa. Jokainen taistelu kestää viikon, ja sillä aikaa muiden sektoreiden uhka kasvaa. Jos kiireellinen sektori jää ilman puolustusta, valtakunnan kestävyys heikkenee. Kestä 12 viikkoa.</li>
-    <li><b>Tulituki:</b> ✈️ F-35 ja 🚀 HIMARS tilataan taistelun aikana napista (pikanäppäimet F ja H). Käytön jälkeen latautuminen kestää 10 minuuttia.</li>
+    <li><b>Tulituki:</b> ✈️ F-35 ja 🚀 HIMARS tilataan taistelun aikana napista (pikanäppäimet F ja H). Käytön jälkeen latautuminen kestää 4 minuuttia. ☢ Ydiniskun voi käyttää kerran kampanjassa.</li>
     <li><b>Hankinnat:</b> torjutuista hyökkäyksistä saa määrärahoja: Leopard 2A6, K9 Moukari, NASAMS ja Patria AMV.</li>
     <li><b>Linnoita:</b> panssarit, lennokit, helikopterit ja tykistö tuhoavat asemia. Asemat säilyvät sektorissa, jonka pidät.</li>
     <li><b>Talvi</b> jäädyttää järvet ja suot. Yö, sumu ja lumimyräkkä lyhentävät kantamia.</li>

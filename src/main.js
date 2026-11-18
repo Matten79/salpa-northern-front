@@ -53,11 +53,13 @@ const DEFS = {
   leo:      { name: 'Leopard 2A6', nameEn: 'Leopard 2A6', descEn: 'Mobile main battle tank. Select it and tap a tile to move.', short: 'LEO', cost: 360, mobile: true, range: 4.5, interval: 2.2, dmg: 170, mult: [.5, 1, .95, 0, .3], hp: 260, armor: .45, speed: 1.3, ground: true, air: true, locked: true, desc: 'Liikkuva panssarivaunu. Valitse se ja napauta ruutua siirtääksesi.' },
   amv:      { name: 'Patria AMV', nameEn: 'Patria AMV', descEn: 'Fast armoured vehicle with an infantry squad. Move it where it is needed.', short: 'AMV', cost: 170, mobile: true, range: 3.3, interval: .2, dmg: 6, mult: [1, .35, .05, .5, .2], hp: 150, armor: .25, speed: 2.1, ground: true, air: true, locked: true, desc: 'Nopea panssariajoneuvo jalkaväkiryhmällä. Siirrä se sinne, missä tarvitaan.' },
   obstacle: { name: 'Hammaskivet', nameEn: 'Tank traps', descEn: 'Stops vehicles, slows infantry. Can be placed on a road.', short: 'Este', cost: 30, passive: true, desc: 'Pysäyttää ajoneuvot, hidastaa jalkaväkeä. Voi asettaa tielle.' },
+  apmine:   { name: 'Henkilömiinoite', nameEn: 'Anti-personnel mines', descEn: 'Explodes when infantry steps on it (4 times). Vehicles do not trigger it.', short: 'HM', cost: 40, passive: true, charges: 4, dmg: 110, desc: 'Räjähtää jalkaväen kohdalla (4 kertaa). Ajoneuvot eivät laukaise sitä.' },
   mine:     { name: 'Panssarimiinoite', nameEn: 'Anti-tank mines', descEn: 'Explodes under a vehicle (3 times). Does not block movement.', short: 'Miina', cost: 60, passive: true, charges: 3, dmg: 160, desc: 'Räjähtää ajoneuvon alla (3 kertaa). Ei estä kulkua.' },
 };
 const dn = d => L(d.name, d.nameEn || d.name), dd = d => L(d.desc, d.descEn || d.desc);
 const TOWERS = new Set(['mg', 'mortar', 'atgm', 'aa', 'k9', 'nasams']);
 const MOBILE = new Set(['leo', 'amv']);
+const NONBLOCK = new Set(['mine', 'apmine']);
 const ARMOR_RED = 0;
 const EDEF = {
   inf:   { name: 'Jalkaväki', hp: 60, speed: 1.0, armor: 0, cls: 'inf', reward: 10, leak: 1, atk: { range: 1.8, dmg: 1.5, interval: 2 } },
@@ -169,6 +171,11 @@ function resolveBattle(id, win) {
 }
 // viikko kuluu: muiden sektoreiden uhka kasvaa, kiireellisistä rangaistus
 function tickWeek(id, rep) {
+  if (progress.nukeEsc) {
+    progress.nukeEsc = false;
+    for (const o of SECTORS) if (o.id !== id) progress.threat[o.id] = Math.min(100, threatOf(o.id) + 15);
+    rep.push(B('☢ Ydinisku kiihdytti vihollisen painostusta kaikilla muilla sektoreilla (uhka +15).', '☢ The nuclear strike escalated enemy pressure in all other sectors (threat +15).'));
+  }
   for (const o of SECTORS) {
     if (o.id === id) continue;
     const before = threatOf(o.id);
@@ -711,6 +718,11 @@ function makeStructMesh(kind) {
   } else if (kind === 'obstacle') {
     const c = new THREE.ConeGeometry(.15, .32, 4);
     for (const [x, z] of [[-.22, -.22], [.22, -.22], [-.22, .22], [.22, .22], [0, 0]]) g.add(mesh(c, MAT.stone, x, .16, z));
+  } else if (kind === 'apmine') {
+    const d = new THREE.CylinderGeometry(.05, .05, .05, 6);
+    for (const [x, z] of [[-.22, -.18], [.15, -.24], [-.05, .12], [.24, .16], [-.25, .22]]) g.add(mesh(d, MAT.mine, x, .025, z, false));
+    g.add(mesh(new THREE.CylinderGeometry(.012, .012, .3, 4), MAT.dark, .32, .15, -.3));
+    g.add(mesh(new THREE.ConeGeometry(.08, .1, 3).rotateX(Math.PI).rotateZ(Math.PI / 2), MAT.accent, .32, .3, -.3));
   } else if (kind === 'mine') {
     const d = new THREE.CylinderGeometry(.09, .09, .04, 8);
     for (const [x, z] of [[-.2, -.15], [.18, -.2], [0, .2]]) g.add(mesh(d, MAT.mine, x, .02, z, false));
@@ -928,7 +940,7 @@ function canPlace(kind, i) {
     return null;
   }
   if (units.some(u => !u.dead && u.i === i)) return L('Ruudussa on oma ajoneuvo', 'Your vehicle is on this tile');
-  if (kind !== 'mine') {
+  if (!NONBLOCK.has(kind)) {
     for (const e of enemies) {
       if (e.dead || e.cls === 'air') continue;
       if (e.cur === i || e.next === i || Math.hypot(e.x - ix(i) - .5, e.z - iz(i) - .5) < .8) return L('Vihollinen on ruudussa', 'An enemy is on this tile');
@@ -979,7 +991,7 @@ function destroyStruct(s, byEnemy) {
     }
   }
   if (selected === s) select(null);
-  if (s.kind !== 'mine') recomputeFields();
+  if (!NONBLOCK.has(s.kind)) recomputeFields();
 }
 
 // ================= OMAT AJONEUVOT (Leopard, AMV) =================
@@ -1197,6 +1209,13 @@ function updateEnemy(e, dt) {
 }
 function enterTile(e) {
   const s = structs.get(e.cur);
+  if (s && s.kind === 'apmine' && e.cls === 'inf') {
+    boom(e.x, e.y + .1, e.z, .6);
+    hurt(e, DEFS.apmine.dmg, [1, .1, 0, 0, 0]);
+    for (const o of enemies) if (o !== e && !o.dead && o.cls === 'inf' && Math.hypot(o.x - e.x, o.z - e.z) < .7) hurt(o, DEFS.apmine.dmg * .5, [1, 0, 0, 0, 0]);
+    s.charges--;
+    if (s.charges <= 0) destroyStruct(s, false); else if (selected === s) refreshPanel();
+  }
   if (s && s.kind === 'mine' && e.cls === 'veh') {
     boom(e.x, e.y + .1, e.z, .9);
     hurt(e, DEFS.mine.dmg, [0, 1, 1, 0, 0]);
@@ -1418,7 +1437,7 @@ function loadSector(id, snap) {
   units = []; cleared = new Set(); moveMarker.visible = false;
   scene.remove(world); world = new THREE.Group(); scene.add(world);
   structs.clear(); rubble.clear();
-  strikes = []; supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
+  strikes = []; nukes = []; radZones = []; shake = 0; supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
   enemies = []; projectiles = []; effects = []; barrages = []; queue = []; barrageTimes = []; deer = []; shockwaves = [];
   money = cfg.money + 100 + (progress.upg.budget || 0) * 100; lives = 20; wave = 0; phase = 'build'; speed = 1; paused = false; gameOver = false; endless = false;
   if (!snap && progress.reserve > 0) { money += 250; progress.reserve--; }
@@ -1667,7 +1686,7 @@ function openSettings() {
 const SHOP = [
   { k: 'leo', cost: 400 }, { k: 'k9', cost: 350 }, { k: 'nasams', cost: 450 }, { k: 'amv', cost: 250 },
   { k: 'budget', upg: true, max: 3, cost: 150, icon: '💶', name: 'Lisäbudjetti', nameEn: 'Extra budget', desc: '+100 € aloitusbudjettia jokaiseen taisteluun.', descEn: '+100 € starting budget in every battle.' },
-  { k: 'support', upg: true, max: 2, cost: 200, icon: '📡', name: 'Tulituen tehostus', nameEn: 'Fire support boost', desc: 'F-35:n ja HIMARSin latausaika −2 min.', descEn: 'F-35 and HIMARS cooldown −2 min.' },
+  { k: 'support', upg: true, max: 2, cost: 200, icon: '📡', name: 'Tulituen tehostus', nameEn: 'Fire support boost', desc: 'F-35:n ja HIMARSin latausaika −1 min.', descEn: 'F-35 and HIMARS cooldown −1 min.' },
 ];
 function openShop() {
   const p = progress;
@@ -1707,7 +1726,7 @@ const INTRO_EN = `<p>The eastern border is split into <b>six sectors</b> from So
     <li><b>Fells</b> (Lapland): positions on a fell see far, +1 range.</li>
     <li><b>Tank traps</b> stop vehicles. Funnel the enemy into kill zones – but never block the route completely.</li>
     <li><b>Attacks:</b> on the map a red border = urgent major offensive, yellow = threat rising. Each battle takes a week, and meanwhile the threat grows elsewhere. Leaving an urgent sector undefended costs national resilience. Hold for 12 weeks.</li>
-    <li><b>Fire support:</b> ✈️ F-35 and 🚀 HIMARS are called in battle (hotkeys F and H). They recharge for 10 minutes after use.</li>
+    <li><b>Fire support:</b> ✈️ F-35 and 🚀 HIMARS are called in battle (hotkeys F and H). They recharge for 4 minutes after use. The ☢ nuclear strike can be used once per campaign.</li>
     <li><b>Procurement:</b> repelled attacks earn funds for Leopard 2A6, K9 Thunder, NASAMS and Patria AMV.</li>
     <li><b>Fortify:</b> tanks, drones, helicopters and artillery destroy your positions. Positions survive in a sector you hold.</li>
     <li><b>Winter</b> freezes lakes and swamps. Night, fog and snowstorms shorten ranges.</li>
@@ -1733,7 +1752,7 @@ const TUT = [
   { fi: 'Hyvä! Panssareita vastaan tarvitaan <b>Panssarintorjuntaohjus</b>. Rakenna se tien lähelle.', en: 'Good! Against armour you need an <b>Anti-tank missile</b>. Build one near the road.', hl: () => toolEls.atgm, done: () => [...structs.values()].some(x => x.kind === 'atgm'), skip: true },
   { fi: 'Kun olet valmis, paina <b>Aloita aalto</b>.', en: 'When you are ready, press <b>Start wave</b>.', hl: () => $('waveBtn'), done: () => phase === 'wave' },
   { fi: 'Napauta omaa asemaa: voit <b>päivittää</b>, <b>linnoittaa</b> ja <b>korjata</b> sen. Linnoitus suojaa vihollisen tulelta.', en: 'Tap one of your positions: you can <b>upgrade</b>, <b>fortify</b> and <b>repair</b> it. Fortification protects against enemy fire.', done: () => !!selected, skip: true },
-  { fi: 'Hätätilanteessa tilaa <b>tulitukea</b>: F-35 iskee panssareihin, HIMARS tuhoaa alueen. Ne latautuvat 10 minuuttia.', en: 'In an emergency call <b>fire support</b>: the F-35 strikes armour, HIMARS saturates an area. They recharge for 10 minutes.', hl: () => $('support'), next: true },
+  { fi: 'Hätätilanteessa tilaa <b>tulitukea</b>: F-35 iskee panssareihin, HIMARS tuhoaa alueen. Ne latautuvat 4 minuuttia. <b>Ydinisku</b> on kertakäyttöinen viimeinen keino.', en: 'In an emergency call <b>fire support</b>: the F-35 strikes armour, HIMARS saturates an area. They recharge for 4 minutes. The <b>nuclear strike</b> is a single-use last resort.', hl: () => $('support'), next: true },
   { fi: 'Siinä perusteet! Kampanjakartalla voit hankkia uutta kalustoa määrärahoilla. Onnea, puolustaja!', en: 'That is the basics! On the campaign map you can buy new equipment with funds. Good luck, defender!', next: true, last: true },
 ];
 function maybeStartTutorial() {
@@ -1767,7 +1786,7 @@ function toast(msg, kind = 'info', ms = 3200) {
   while ($('toasts').children.length > 3) $('toasts').firstChild.remove();
 }
 const toolEls = {};
-const TOOL_LABEL = { mg: ['Konekivääri', 'Machine gun'], mortar: ['Kranaatinheitin', 'Mortar'], atgm: ['Pst-ohjus', 'Anti-tank'], aa: ['Ilmatorjunta', 'Anti-air'], obstacle: ['Hammaskivet', 'Tank traps'], mine: ['Miinoite', 'Mines'], k9: ['K9 Moukari', 'K9 Thunder'], nasams: ['NASAMS', 'NASAMS'], leo: ['Leopard', 'Leopard'], amv: ['Patria AMV', 'Patria AMV'] };
+const TOOL_LABEL = { mg: ['Konekivääri', 'Machine gun'], mortar: ['Kranaatinheitin', 'Mortar'], atgm: ['Pst-ohjus', 'Anti-tank'], aa: ['Ilmatorjunta', 'Anti-air'], obstacle: ['Hammaskivet', 'Tank traps'], apmine: ['Henkilömiinat', 'AP mines'], mine: ['Panssarimiinat', 'AT mines'], k9: ['K9 Moukari', 'K9 Thunder'], nasams: ['NASAMS', 'NASAMS'], leo: ['Leopard', 'Leopard'], amv: ['Patria AMV', 'Patria AMV'] };
 const toolLabel = (d, k) => L(...TOOL_LABEL[k]);
 const refundOf = x => Math.round(x.spent * (x.kept ? .3 : .6));
 function dismantle(x) {
@@ -1835,7 +1854,7 @@ function refreshPanel() {
         <button data-a="sell">🔨 ${L('Pura', 'Dismantle')} +${refund} €</button>
       </div>`;
   } else {
-    html += `<p>${dd(s.def)}</p>${s.kind === 'mine' ? `<div class="row"><span>${L('Miinoja jäljellä', 'Mines left')}</span><b>${s.charges}</b></div>` : ''}
+    html += `<p>${dd(s.def)}</p>${NONBLOCK.has(s.kind) ? `<div class="row"><span>${L('Miinoja jäljellä', 'Mines left')}</span><b>${s.charges}</b></div>` : ''}
       <div class="btns"><button data-a="sell">🔨 ${L('Pura', 'Dismantle')} +${refund} €</button></div>`;
   }
   html += `<button class="close" data-a="close">✕</button>`;
@@ -1908,6 +1927,7 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') { setTool(null); select(null); if (supportMode) cancelSupport(); }
   if (e.key === 'f' || e.key === 'F') setSupportMode('f35');
   if (e.key === 'h' || e.key === 'H') setSupportMode('himars');
+  if (e.key === 'n' || e.key === 'N') setSupportMode('nuke');
   if (e.key === ' ') { e.preventDefault(); phase === 'build' ? startWave() : (paused = !paused, updateHUD(true)); }
   const n = parseInt(e.key); const ks = Object.keys(toolEls); if (n >= 1 && n <= ks.length) setTool(ks[n - 1]);
 });
@@ -1955,7 +1975,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   const i = tileAt(e.clientX, e.clientY);
   if (supportMode) {
     if (i < 0) { toast(L('Valitse kohde kartalta.', 'Pick a target on the map.'), 'warn', 1500); return; }
-    if (isTouch && pendingStrike !== i) { pendingStrike = i; previewStrike(i); return; }
+    if ((isTouch || supportMode === 'nuke') && pendingStrike !== i) { pendingStrike = i; previewStrike(i); if (supportMode === 'nuke') toast(L('☢ Vahvista ydinisku napauttamalla samaa kohtaa uudelleen.', '☢ Confirm the nuclear strike by tapping the same spot again.'), 'warn', 2500); return; }
     callStrike(supportMode, i); return;
   }
   if (tool === 'demolish') {
@@ -2005,10 +2025,14 @@ addEventListener('keydown', coverKey);
 
 // ================= TULITUKI: F-35 JA HIMARS =================
 const SUPPORT = {
-  f35:    { name: 'F-35', icon: '✈️', cd: 600, radius: 3.5, key: 'f', descEn: 'Fighter precision strike: guided bombs on the heaviest vehicles in the area, and shoots down drones and helicopters.', desc: 'Hävittäjän täsmäisku: ohjautuvat pommit kohdealueen raskaimpiin ajoneuvoihin ja lennokkien alasampuminen.' },
-  himars: { name: 'HIMARS', icon: '🚀', cd: 600, radius: 1.8, key: 'h', descEn: 'Rocket artillery: an eight-rocket salvo. Destroys everything on the ground in the area.', desc: 'Raketinheitin: kahdeksan raketin aluetuli. Tuhoaa maalla kaiken kohdealueella.' },
+  f35:    { name: 'F-35', icon: '✈️', cd: 240, radius: 3.5, key: 'f', descEn: 'Fighter precision strike: guided bombs on the heaviest vehicles in the area, and shoots down drones and helicopters.', desc: 'Hävittäjän täsmäisku: ohjautuvat pommit kohdealueen raskaimpiin ajoneuvoihin ja lennokkien alasampuminen.' },
+  himars: { name: 'HIMARS', icon: '🚀', cd: 240, radius: 1.8, key: 'h', descEn: 'Rocket artillery: an eight-rocket salvo. Destroys everything on the ground in the area.', desc: 'Raketinheitin: kahdeksan raketin aluetuli. Tuhoaa maalla kaiken kohdealueella.' },
+  nuke:   { name: 'Ydinisku', nameEn: 'Nuclear strike', cd: 0, radius: 6, once: true, key: 'n',
+    desc: 'Kertakäyttöinen koko kampanjassa. Tuhoaa kaiken 6 ruudun säteellä – myös omat asemat lähellä räjähdystä – ja jättää säteilyalueen. Vihollisen painostus kiihtyy muilla sektoreilla.',
+    descEn: 'Single use per campaign. Destroys everything within 6 tiles – including your own positions near ground zero – and leaves a radiation zone. Enemy pressure escalates in other sectors.' },
 };
 if (!progress.support) progress.support = { f35: 0, himars: 0 };
+for (const k of ['f35', 'himars']) progress.support[k] = Math.min(progress.support[k] || 0, SUPPORT[k].cd);
 let supportMode = null, pendingStrike = -1, strikes = [], supportUiT = 0;
 const strikeRingMat = new THREE.MeshBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 const strikeRing = new THREE.Mesh(new THREE.RingGeometry(.93, 1, 56).rotateX(-Math.PI / 2), strikeRingMat);
@@ -2038,11 +2062,13 @@ function setSupportMode(k) {
   if (supportMode === k) { cancelSupport(); return; }
   if (phase !== 'wave') { toast(L('Tulitukea voi tilata vain hyökkäyksen aikana.', 'Fire support can only be called during an attack.'), 'warn', 2200); return; }
   if (k === 'f35' && COND[cond].noAir) { toast(L('Sää estää lentotoiminnan.', 'Weather prevents air operations.'), 'warn', 2200); sfx('deny'); return; }
+  if (k === 'nuke' && progress.nukeUsed) { toast(L('Ydinisku on jo käytetty tässä kampanjassa.', 'The nuclear strike has already been used this campaign.'), 'warn', 2500); sfx('deny'); return; }
   if (progress.support[k] > 0) { toast(L(`${SUPPORT[k].name} latautuu vielä ${fmtCd(progress.support[k])}.`, `${SUPPORT[k].name} recharging: ${fmtCd(progress.support[k])}.`), 'warn', 2200); return; }
   setTool(null); select(null);
   supportMode = k; pendingStrike = -1;
   $('hint').hidden = false;
-  $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${SUPPORT[k].name}</b> – ${dd(SUPPORT[k])}<br><small>${isTouch ? L('Napauta kohdetta, napauta uudelleen vahvistaaksesi.', 'Tap a target, tap again to confirm.') : L('Klikkaa kohdetta. Esc peruu.', 'Click a target. Esc cancels.')}</small>`;
+  $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${L(SUPPORT[k].name, SUPPORT[k].nameEn || SUPPORT[k].name)}</b> – ${dd(SUPPORT[k])}<br><small>${k === 'nuke' ? L('Napauta kohdetta ja vahvista napauttamalla uudelleen.', 'Tap a target and confirm by tapping again.') : isTouch ? L('Napauta kohdetta, napauta uudelleen vahvistaaksesi.', 'Tap a target, tap again to confirm.') : L('Klikkaa kohdetta. Esc peruu.', 'Click a target. Esc cancels.')}</small>`;
+  strikeRingMat.color.setHex(k === 'nuke' ? 0xff3b30 : 0xff7a3c);
   updateSupportUI(true);
 }
 function cancelSupport() {
@@ -2055,10 +2081,11 @@ function previewStrike(i) {
   const r = SUPPORT[supportMode].radius, x = ix(i) + .5, z = iz(i) + .5, y = tileTop(i) + .07;
   for (const m of [strikeRing, strikeDisk]) { m.visible = true; m.position.set(x, y, z); m.scale.setScalar(r); }
 }
-function supportCd(k) { return Math.max(240, SUPPORT[k].cd - (progress.upg.support || 0) * 120); }
+function supportCd(k) { return Math.max(120, SUPPORT[k].cd - (progress.upg.support || 0) * 60); }
 function fmtCd(s) { s = Math.ceil(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 function callStrike(k, i) {
   const x = ix(i) + .5, z = iz(i) + .5;
+  if (k === 'nuke') { cancelSupport(); launchNuke(x, z); return; }
   progress.support[k] = supportCd(k); saveProgress(); sfx(k === 'f35' ? 'jet' : 'himars');
   cancelSupport();
   if (k === 'himars') {
@@ -2146,10 +2173,99 @@ for (const [k, d] of Object.entries(SUPPORT)) {
   b.title = dd(d);
   b.innerHTML = `<span class="ic">${ICONS[k]}</span><span class="nm">${d.name}</span><span class="st"></span><i class="fill"></i>`;
   b.onclick = () => setSupportMode(k);
+  if (k === 'nuke') b.classList.add('nuke');
   $('support').appendChild(b); supEls[k] = b;
+}
+// ================= YDINISKU =================
+let nukes = [], radZones = [], shake = 0;
+function launchNuke(x, z) {
+  progress.nukeUsed = true; progress.nukeEsc = true; saveProgress();
+  toast(L('☢ YDINISKU LAUKAISTU – osumaan 3 sekuntia!', '☢ NUCLEAR STRIKE LAUNCHED – impact in 3 seconds!'), 'warn', 3000);
+  sfx('alarm');
+  const y = groundY(x, z);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.96, 1, 72).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: .8, depthWrite: false, side: THREE.DoubleSide }));
+  ring.position.set(x, y + .08, z); ring.scale.setScalar(SUPPORT.nuke.radius); world.add(ring);
+  const missile = mesh(new THREE.CylinderGeometry(.06, .06, .6, 6), MAT.white, x - 4, 14, z, false); world.add(missile);
+  nukes.push({ x, z, y, t: 0, T: 3, ring, missile, phase: 'in' });
+  updateSupportUI(true);
+}
+function detonate(n) {
+  const { x, z, y } = n, R0 = SUPPORT.nuke.radius;
+  world.remove(n.ring); world.remove(n.missile);
+  sfx('nuke');
+  const fl = $('flash'); fl.classList.add('nukeflash'); setTimeout(() => fl.classList.remove('nukeflash'), 900);
+  shake = 1.6;
+  // tulipallo ja sienipilvi
+  const fire = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: 0xfff1c0, transparent: true, opacity: 1, depthWrite: false }));
+  fire.position.set(x, y + .5, z); world.add(fire);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(.5, .9, 1, 10, 1, true), new THREE.MeshLambertMaterial({ color: 0x7a5a48, transparent: true, opacity: .95, flatShading: true }));
+  stem.position.set(x, y, z); world.add(stem);
+  const cap = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: 0xc27a4a, emissive: 0x5a2008, transparent: true, opacity: .95, flatShading: true }));
+  cap.position.set(x, y + 1, z); world.add(cap);
+  const shock = new THREE.Mesh(new THREE.RingGeometry(.9, 1, 72).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .8, depthWrite: false, side: THREE.DoubleSide }));
+  shock.position.set(x, y + .1, z); world.add(shock);
+  n.fx = { fire, stem, cap, shock }; n.phase = 'blast'; n.t = 0;
+  // vahinko viholliselle
+  for (const e of enemies) if (!e.dead && Math.hypot(e.x - x, e.z - z) < R0) hurt(e, 1e6, [1, 1, 1, 1, 1]);
+  // omat asemat ja ajoneuvot
+  for (const st of [...structs.values(), ...units]) {
+    const d = Math.hypot(st.x - x, st.z - z);
+    if (d < 2.5) destroyStruct(st, true);
+    else if (d < 4.5 && st.def.hp) hurtStruct(st, st.maxHp * .6 / (1 - (st.mobile ? (st.def.armor || 0) : FORT_RED[st.fort])));
+  }
+  // metsät palavat, maa hiiltyy
+  for (let zz = 0; zz < H; zz++) for (let xx = 0; xx < W; xx++) {
+    const i = idx(xx, zz), d = Math.hypot(xx + .5 - x, zz + .5 - z);
+    if (d < R0 - 1) { clearTile(i); }
+    if (d < 3.2 && terr[i] !== LAKE && terr[i] !== SEA) { tmpCol.setHex(0x3a332c).multiplyScalar(.8 + hash2(xx, zz) * .4); tiles.setColorAt(i, tmpCol); }
+  }
+  tiles.instanceColor.needsUpdate = true;
+  for (const d of deer) { if (Math.hypot(d.x - x, d.z - z) < R0) { d.state = 'flee'; d.t = 3; d.fx = d.x - x || .5; d.fz = d.z - z || .5; } }
+  shockwaves.push({ x, z, r: R0 * 2 });
+  // säteilyalue
+  const zone = new THREE.Mesh(new THREE.CircleGeometry(3, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xd8ff3a, transparent: true, opacity: .12, depthWrite: false }));
+  zone.position.set(x, y + .09, z); world.add(zone);
+  radZones.push({ x, z, r: 3, mesh: zone });
+  recomputeFields();
+  toast(L('☢ Ydinisku osui. Säteilyalue vahingoittaa jalkaväkeä.', '☢ Nuclear strike hit. The radiation zone damages infantry.'), 'warn', 4000);
+}
+function updateNukes(dt) {
+  for (const n of nukes) {
+    n.t += dt;
+    if (n.phase === 'in') {
+      const k = Math.min(1, n.t / n.T);
+      n.ring.material.opacity = .4 + .4 * Math.abs(Math.sin(n.t * 10));
+      n.missile.position.set(n.x - 4 * (1 - k), n.y + 14 * (1 - k), n.z); n.missile.rotation.z = .28;
+      if (k >= 1) detonate(n);
+    } else if (n.phase === 'blast') {
+      const { fire, stem, cap, shock } = n.fx, t = n.t;
+      fire.scale.setScalar(Math.min(3.2, .5 + t * 6)); fire.material.opacity = Math.max(0, 1 - t / 1.4);
+      fire.material.color.setHex(t < .4 ? 0xfff1c0 : 0xff9a40);
+      const h = Math.min(5.5, t * 2.4);
+      stem.scale.set(1 + t * .1, h, 1 + t * .1); stem.position.y = n.y + h / 2;
+      cap.position.y = n.y + h + .3; cap.scale.set(1.2 + Math.min(1.8, t * .9), .7 + Math.min(.9, t * .4), 1.2 + Math.min(1.8, t * .9));
+      shock.scale.setScalar(.5 + t * 9); shock.material.opacity = Math.max(0, .8 - t / 1.2);
+      if (t > 5) { const o = Math.max(0, 1 - (t - 5) / 4); stem.material.opacity = cap.material.opacity = .95 * o; }
+      if (t > 9) { for (const m of [fire, stem, cap, shock]) world.remove(m); n.done = true; }
+    }
+  }
+  nukes = nukes.filter(n => !n.done);
+  for (const zn of radZones) {
+    zn.mesh.material.opacity = .1 + .05 * Math.sin(performance.now() * .004);
+    for (const e of enemies) if (!e.dead && e.cls === 'inf' && Math.hypot(e.x - zn.x, e.z - zn.z) < zn.r) hurt(e, 14 * dt, [1, 0, 0, 0, 0]);
+  }
+  if (shake > 0) shake = Math.max(0, shake - dt);
 }
 function updateSupportUI(force) {
   for (const [k, b] of Object.entries(supEls)) {
+    if (k === 'nuke') {
+      const used = !!progress.nukeUsed;
+      b.classList.toggle('ready', !used && phase === 'wave'); b.classList.toggle('armed', supportMode === k); b.classList.toggle('cooling', used);
+      b.querySelector('.nm').textContent = L('Ydinisku', 'Nuke');
+      b.querySelector('.st').textContent = supportMode === k ? L('VALITSE KOHDE', 'PICK TARGET') : used ? L('käytetty', 'used') : L('1× kampanja', '1× campaign');
+      b.querySelector('.fill').style.width = used ? '0%' : '100%';
+      continue;
+    }
     const cd = progress.support[k] || 0, ready = cd <= 0;
     b.classList.toggle('ready', ready && phase === 'wave');
     b.classList.toggle('armed', supportMode === k);
@@ -2194,6 +2310,7 @@ function update(dt) {
   updateEffects(dt);
   if (deer.length) updateDeer(dt);
   updateStrikes(dt);
+  updateNukes(dt);
   if (phase === 'wave') tickSupport(dt);
   enemies = enemies.filter(e => !e.dead);
   if (phase === 'wave' && !specDone && waveTime > 12 + (wave % 3) * 3) spawnSpecialForces();
@@ -2219,6 +2336,9 @@ function frame(now) {
   const t = controls.target, cx = clamp(t.x, -4, W + 1), cz = clamp(t.z, -1, H + 1);
   camera.position.x += cx - t.x; camera.position.z += cz - t.z; t.x = cx; t.z = cz;
   controls.update();
+  let sx = 0, sy = 0;
+  if (shake > 0) { const a = shake * .25; sx = (Math.random() - .5) * a; sy = (Math.random() - .5) * a; camera.position.x += sx; camera.position.y += sy; }
   renderer.render(scene, camera);
+  camera.position.x -= sx; camera.position.y -= sy;
 }
 requestAnimationFrame(frame);

@@ -97,6 +97,21 @@ export const ICONS = {
     <path d="M6 27 L18 15" fill="none" stroke-width="3"/>
     <path d="M14 9 L20 3 L29 12 L23 18 Z" stroke="none"/>
     <path d="M3 29 L9 23 M2 22 L6 24 M10 30 L8 26" fill="none" stroke-width="1.6" opacity=".7"/>`),
+  // henkilömiinat: pienet miinat ja varoituskolmio
+  apmine: svg(`
+    <ellipse cx="7" cy="25" rx="4.5" ry="2" stroke="none"/><rect x="2.5" y="22" width="9" height="3" stroke="none"/><ellipse cx="7" cy="22" rx="4.5" ry="1.8" stroke="none" opacity=".75"/>
+    <ellipse cx="17" cy="27" rx="4.5" ry="2" stroke="none"/><rect x="12.5" y="24" width="9" height="3" stroke="none"/><ellipse cx="17" cy="24" rx="4.5" ry="1.8" stroke="none" opacity=".75"/>
+    <path d="M26 7 L26 28" fill="none" stroke-width="1.6"/>
+    <path d="M20 5 L32 5 L26 15 Z" stroke-width="1"/>
+    <path d="M26 7.5 L26 10.5" fill="none" stroke="#0d141b" stroke-width="1.6"/>`),
+  // ydinisku: säteilysymboli
+  nuke: svg(`
+    <circle cx="16" cy="16" r="14" fill="none" stroke-width="2"/>
+    <circle cx="16" cy="16" r="2.6" stroke="none"/>
+    <path d="M16 16 L9.5 4.8 A13 13 0 0 1 22.5 4.8 Z" stroke="none" transform="translate(0 1.2)"/>
+    <path d="M16 16 L9.5 4.8 A13 13 0 0 1 22.5 4.8 Z" stroke="none" transform="rotate(120 16 16) translate(0 1.2)"/>
+    <path d="M16 16 L9.5 4.8 A13 13 0 0 1 22.5 4.8 Z" stroke="none" transform="rotate(240 16 16) translate(0 1.2)"/>
+    <circle cx="16" cy="16" r="5" fill="#0d141b" stroke="none" opacity=".9"/><circle cx="16" cy="16" r="2.6" stroke="none"/>`),
   // asetukset (ratas)
   gear: svg(`<circle cx="16" cy="16" r="5" fill="none" stroke-width="3"/><path d="M16 3v5M16 24v5M3 16h5M24 16h5M6.8 6.8l3.5 3.5M21.7 21.7l3.5 3.5M6.8 25.2l3.5-3.5M21.7 10.3l3.5-3.5" fill="none" stroke-width="3"/>`),
 };

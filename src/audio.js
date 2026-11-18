@@ -67,6 +67,7 @@ const SFX = {
   leak:    () => tone({ f0: 300, f1: 150, dur: .4, type: 'square', vol: .08 }),
   victory: () => [523, 659, 784, 1046].forEach((f, k) => tone({ f0: f, dur: .35, type: 'triangle', vol: .12, delay: k * .14 })),
   defeat:  () => [392, 330, 262, 196].forEach((f, k) => tone({ f0: f, dur: .45, type: 'triangle', vol: .1, delay: k * .2 })),
+  nuke:    () => { noise({ dur: 4.5, f0: 900, f1: 40, vol: .9, a: .01 }); tone({ f0: 55, f1: 22, dur: 4, vol: .7, a: .02 }); noise({ dur: 3, type: 'bandpass', f0: 200, f1: 60, q: .6, vol: .5, a: .4, delay: .3 }); },
   coin:    () => { tone({ f0: 988, dur: .07, type: 'square', vol: .05 }); tone({ f0: 1318, dur: .12, type: 'square', vol: .05, delay: .07 }); },
 };
 const GAP = { mg: .07, aa: .06, amv: .07, enemyFire: .08, boomS: .05, boomL: .08, missile: .1, mortar: .1, tankFire: .12 };

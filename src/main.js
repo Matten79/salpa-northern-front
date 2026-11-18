@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SECTORS, FIN_OUTLINE, BORDER_LINE, CITIES } from './sectors.js';
 import { ICONS } from './icons.js';
 import { initAudio, sfx, setSoundEnabled } from './audio.js';
@@ -332,11 +337,21 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .98;
 $('app').appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const SKY = [0x9fc4dd, 0xc3d2dc];
 scene.background = new THREE.Color(SKY[0]);
 scene.fog = new THREE.Fog(SKY[0], 45, 90);
+// taivaskupoli: liukuväri horisontista zeniittiin
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { top: { value: new THREE.Color(0x5f93c4) }, bottom: { value: new THREE.Color(SKY[0]) } },
+  vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
+  fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 vP; void main(){ float h = clamp(vP.y * 1.6, 0., 1.); gl_FragColor = vec4(mix(bottom, top, pow(h, .7)), 1.); }',
+});
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(160, 24, 12), skyMat);
+skyDome.position.set(15, 0, 9); skyDome.renderOrder = -10; scene.add(skyDome);
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, .1, 200);
 const controls = new MapControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = .12;
@@ -353,11 +368,12 @@ resetCamera();
 
 const hemi = new THREE.HemisphereLight(0xe4f0ff, 0x4a5a3a, 1.4); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
-sun.position.set(W / 2 + 10, 28, H / 2 - 10);
+sun.position.set(W / 2 + 16, 24, H / 2 - 14);
 sun.target.position.set(W / 2, 0, H / 2);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
+Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 90 });
+sun.shadow.normalBias = .02;
 sun.shadow.bias = -0.0005;
 scene.add(sun, sun.target);
 function applyGfx() {
@@ -368,6 +384,34 @@ function applyGfx() {
   if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
   scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); });
   renderer.setSize(innerWidth, innerHeight);
+  if (typeof setupPost === 'function') setupPost();
+}
+// --- jälkikäsittely (vain korkea grafiikka): varjostus (GTAO) ja hehku (bloom)
+let composer = null, gtao = null, bloom = null;
+function setupPost() {
+  if (composer) { composer.dispose && composer.dispose(); composer = null; }
+  if (settings.gfx !== 'high') return;
+  try {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+    gtao.blendIntensity = .85;
+    // läpinäkyvät (tekstit, palkit, efektit, vesi) eivät saa varjostaa
+    gtao._overrideVisibility = function () {
+      const cache = this._visibilityCache;
+      this.scene.traverse(o => {
+        if (!o.visible) return;
+        if (o.isPoints || o.isLine || o.isSprite || (o.material && !Array.isArray(o.material) && o.material.transparent)) { o.visible = false; cache.push(o); }
+      });
+    };
+    gtao.updateGtaoMaterial({ radius: .55, distanceExponent: 1.2, thickness: 1.2, scale: 1 });
+    composer.addPass(gtao);
+    bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .55, .35, .92);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(innerWidth, innerHeight);
+  } catch (e) { composer = null; }
 }
 applyGfx();
 // --- sääolosuhteet
@@ -402,7 +446,9 @@ function setCondition(c, instant) {
   if (instant) { env.bg.copy(envT.bg); env.hC.copy(envT.hC); env.sC.copy(envT.sC); for (const k of ['fogN', 'fogF', 'hI', 'sI', 'snow']) env[k] = envT[k]; applyEnv(); }
 }
 function applyEnv() {
-  scene.background.copy(env.bg); scene.fog.color.copy(env.bg); scene.fog.near = env.fogN; scene.fog.far = env.fogF;
+  scene.background.copy(env.bg);
+  skyMat.uniforms.bottom.value.copy(env.bg);
+  skyMat.uniforms.top.value.copy(env.bg).multiplyScalar(.62).lerp(new THREE.Color(0x2c5a92), cond === 'night' || cond === 'fog' || cond === 'storm' ? .05 : .35); scene.fog.color.copy(env.bg); scene.fog.near = env.fogN; scene.fog.far = env.fogF;
   hemi.intensity = env.hI; hemi.color.copy(env.hC); sun.intensity = env.sI; sun.color.copy(env.sC);
   snow.material.opacity = .85 * env.snow; snow.visible = env.snow > .02;
 }
@@ -466,8 +512,111 @@ function refreshAllTiles() {
 }
 
 // --- puut (sektorikohtainen)
-const treeGeo = new THREE.ConeGeometry(.17, .6, 5); treeGeo.translate(0, .3, 0);
+const treeGeo = mergeGeometries([
+  new THREE.CylinderGeometry(.03, .04, .14, 5).translate(0, .07, 0),
+  new THREE.ConeGeometry(.2, .36, 6).translate(0, .3, 0),
+  new THREE.ConeGeometry(.15, .32, 6).translate(0, .5, 0),
+  new THREE.ConeGeometry(.09, .22, 6).translate(0, .68, 0),
+]);
+treeGeo.computeVertexNormals();
 let trees = null; const treeOf = new Map(); const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+// --- ympäröivä maasto, vesi ja kivet
+const waterTex = (() => {
+  const n = 128, c = document.createElement('canvas'); c.width = c.height = n;
+  const g = c.getContext('2d'), img = g.createImageData(n, n), hgt = new Float32Array(n * n);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const u = x / n * Math.PI * 2, v = y / n * Math.PI * 2;
+    hgt[y * n + x] = Math.sin(u * 3 + v) * .5 + Math.sin(u * 5 - v * 4) * .3 + Math.sin(u * 2 + v * 7) * .2 + Math.sin(u * 11 + v * 3) * .1;
+  }
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const dx = hgt[y * n + (x + 1) % n] - hgt[y * n + (x - 1 + n) % n], dy = hgt[((y + 1) % n) * n + x] - hgt[((y - 1 + n) % n) * n + x];
+    const k = (y * n + x) * 4; img.data[k] = 128 - dx * 90; img.data[k + 1] = 128 - dy * 90; img.data[k + 2] = 255; img.data[k + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); return t;
+})();
+const waterMat = new THREE.MeshStandardMaterial({ color: 0x2b6aa6, roughness: .42, metalness: 0, transparent: true, opacity: .85, normalMap: waterTex, normalScale: new THREE.Vector2(.22, .22) });
+let lakeWater = null, seaWater = null, outerGround = [], outerTrees = null, rocks = null;
+function quadsFor(test, y) {
+  const pos = [], idxs = []; let v = 0;
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = idx(x, z); if (!test(terr[i])) continue;
+    pos.push(x, y, z, x + 1, y, z, x + 1, y, z + 1, x, y, z + 1);
+    idxs.push(v, v + 2, v + 1, v, v + 3, v + 2); v += 4;
+  }
+  if (!v) return null;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idxs);
+  const uv = []; for (let k = 0; k < pos.length; k += 3) uv.push(pos[k] / 4, pos[k + 2] / 4); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals(); return g;
+}
+const outerMat = new THREE.MeshLambertMaterial({ color: 0x7ea048 });
+const outerSeaMat = new THREE.MeshStandardMaterial({ color: 0x24598e, roughness: .45, metalness: 0, normalMap: waterTex, normalScale: new THREE.Vector2(.2, .2) });
+function buildSurroundings() {
+  const lg = quadsFor(t => t === LAKE, .145), sg = quadsFor(t => t === SEA, .1);
+  lakeWater = lg ? new THREE.Mesh(lg, waterMat) : null; seaWater = sg ? new THREE.Mesh(sg, waterMat) : null;
+  if (lakeWater) { lakeWater.receiveShadow = true; lakeWater.visible = !winter; world.add(lakeWater); }
+  if (seaWater) { seaWater.receiveShadow = true; world.add(seaWater); }
+  // ympäröivä maa: kartta ei enää leiju tyhjän päällä
+  outerGround = [];
+  const seaSouth = !!cfg.sea;
+  const rects = [[-120, -4.7, -120, 120], [30, 120, -120, 120], [-4.7, 30, -120, -1], [0, 30, -1, 0], [-4.7, 30, 19, 120], [0, 30, 18, 19]];
+  for (const [x0, x1, z0, z1] of rects) {
+    const south = z0 >= 18, isSea = seaSouth && south && true;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2), isSea ? outerSeaMat : outerMat);
+    m.position.set((x0 + x1) / 2, isSea ? .1 : .27, (z0 + z1) / 2); m.receiveShadow = true; world.add(m); outerGround.push(m);
+  }
+  // reunametsät
+  const n = settings.gfx === 'low' ? 400 : 1800, list = [];
+  let seed = cfg.seed * 7919 + 3; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let k = 0; k < n * 3 && list.length < n; k++) {
+    const x = -40 + rnd() * 110, z = -30 + rnd() * 78;
+    if (x > -5 && x < 30.3 && z > -1.3 && z < 19.3) continue;
+    if (seaSouth && z > 18) continue;
+    const dEdge = Math.max(0, Math.max(-5 - x, x - 30.3, -1.3 - z, z - 19.3));
+    if (vnoise(x * .18 + cfg.seed, z * .18) < (1 - cfg.forest) * .9 - Math.max(0, .35 - dEdge * .05)) continue;
+    if (rnd() < dEdge / 70) continue;
+    list.push([x, z]);
+  }
+  outerTrees = new THREE.InstancedMesh(treeGeo, new THREE.MeshLambertMaterial({ flatShading: true }), Math.max(1, list.length));
+  outerTrees.castShadow = false; outerTrees.receiveShadow = true;
+  list.forEach(([x, z], k) => {
+    const sc = (.8 + rnd() * .6) * cfg.trees.scale; dummy.position.set(x, .27, z); dummy.scale.set(sc * cfg.trees.slim, sc, sc * cfg.trees.slim); dummy.rotation.y = rnd() * 6; dummy.updateMatrix();
+    outerTrees.setMatrixAt(k, dummy.matrix);
+    tmpCol.setHex(winter ? cfg.trees.winterCol : cfg.trees.col).multiplyScalar(.75 + rnd() * .3); outerTrees.setColorAt(k, tmpCol);
+  });
+  dummy.rotation.set(0, 0, 0);
+  world.add(outerTrees);
+  // kivet pelloille ja tuntureille
+  const rk = [];
+  for (let i = 0; i < N; i++) {
+    const t = terr[i], pr = t === FELL ? .7 : t === FIELD ? .12 : t === FOREST ? .1 : 0;
+    if (hash2(i, 77 + cfg.seed) < pr) rk.push(i);
+  }
+  const rg = new THREE.IcosahedronGeometry(.07, 0);
+  rocks = new THREE.InstancedMesh(rg, new THREE.MeshLambertMaterial({ flatShading: true }), Math.max(1, rk.length * 2));
+  rocks.castShadow = true; rocks.receiveShadow = true;
+  let c = 0;
+  for (const i of rk) for (let k = 0; k < 2; k++) {
+    const x = ix(i) + .15 + hash2(i, k + 3) * .7, z = iz(i) + .15 + hash2(k + 5, i) * .7, sc = .6 + hash2(i + k, 9) * 1.2;
+    dummy.position.set(x, tileTop(i) + .02, z); dummy.scale.set(sc, sc * .6, sc); dummy.rotation.set(hash2(i, k) * 3, hash2(k, i) * 3, 0); dummy.updateMatrix();
+    rocks.setMatrixAt(c, dummy.matrix); tmpCol.setHex(0x8a8a84).multiplyScalar(.7 + hash2(i, k + 11) * .5); rocks.setColorAt(c, tmpCol); c++;
+  }
+  rocks.count = c; dummy.rotation.set(0, 0, 0);
+  if (c) world.add(rocks);
+  colorOuter(false);
+}
+function colorOuter(fade) {
+  const target = new THREE.Color(PAL[winter ? 1 : 0][FOREST]).lerp(new THREE.Color(PAL[winter ? 1 : 0][FIELD]), winter ? .5 : .15).multiplyScalar(winter ? .92 : .66);
+  if (fade) { const before = outerMat.color.clone(); outerMat.color.copy(target); fadeMat(outerMat, before); } else outerMat.color.copy(target);
+  if (outerTrees && outerTrees.instanceColor) {
+    const b = Float32Array.from(outerTrees.instanceColor.array);
+    for (let k = 0; k < outerTrees.count; k++) { tmpCol.setHex(winter ? cfg.trees.winterCol : cfg.trees.col).multiplyScalar(.75 + hash2(k, 31) * .3); outerTrees.setColorAt(k, tmpCol); }
+    outerTrees.instanceColor.needsUpdate = true;
+    if (fade) fadeAttr(outerTrees.instanceColor, b);
+  }
+  if (lakeWater) lakeWater.visible = !winter;
+  if (rocks && rocks.count) for (let k = 0; k < rocks.count; k++) { /* kivet pysyvät */ }
+}
 function buildTrees() {
   treeOf.clear();
   const forestTiles = []; for (let i = 0; i < N; i++) if (terr[i] === FOREST) forestTiles.push(i);
@@ -852,8 +1001,23 @@ const proto = {};
 // ================= EFEKTIT =================
 const boomGeo = new THREE.IcosahedronGeometry(1, 0);
 let shockwaves = [];
+const debrisGeo = new THREE.BoxGeometry(.05, .05, .05), smokeGeo = new THREE.IcosahedronGeometry(1, 1);
+let debris = [];
 function boom(x, y, z, r, color = 0xffa040) {
-  const m = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .9, depthWrite: false }));
+  const bm = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .9, depthWrite: false }); bm.color.multiplyScalar(2.2);
+  const m = new THREE.Mesh(boomGeo, bm);
+  if (r >= .4 && settings.gfx !== 'low') {
+    for (let k = 0; k < (r >= .8 ? 7 : 4); k++) {
+      const d = new THREE.Mesh(debrisGeo, MAT.rubble); d.position.set(x, y, z); world.add(d);
+      const a = Math.random() * 6.28, sp = 1 + Math.random() * 2 * r;
+      debris.push({ m: d, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 2 + Math.random() * 3 * r, t: 1.2, kind: 'deb' });
+    }
+    for (let k = 0; k < (r >= .8 ? 3 : 1); k++) {
+      const sm = new THREE.Mesh(smokeGeo, new THREE.MeshLambertMaterial({ color: 0x5a5a5a, transparent: true, opacity: .55, depthWrite: false, flatShading: true }));
+      sm.position.set(x + (Math.random() - .5) * r, y + .1, z + (Math.random() - .5) * r); sm.scale.setScalar(.12 * r + .05); world.add(sm);
+      debris.push({ m: sm, vy: .5 + Math.random() * .4, t: 2.2, T: 2.2, grow: .35 * r + .15, kind: 'smoke' });
+    }
+  }
   m.position.set(x, y, z); m.scale.setScalar(r * .2); world.add(m);
   effects.push({ obj: m, t: .45, T: .45, r, kind: 'boom' });
   if (r > .3) shockwaves.push({ x, z, r: r * 2.5 });
@@ -865,8 +1029,39 @@ function puff(p) {
   effects.push({ obj: m, t: .5, T: .5, r: .12, kind: 'boom' });
 }
 function tracer(a, b, color, life = .07) {
-  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color, transparent: true }));
+  const lm = new THREE.LineBasicMaterial({ color, transparent: true }); lm.color.multiplyScalar(1.8);
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), lm);
   world.add(l); effects.push({ obj: l, t: life, T: life, kind: 'fade' });
+}
+function updateDebris(dt) {
+  for (const d of debris) {
+    d.t -= dt;
+    if (d.kind === 'deb') { d.vy -= 9 * dt; d.m.position.x += d.vx * dt; d.m.position.z += d.vz * dt; d.m.position.y = Math.max(.3, d.m.position.y + d.vy * dt); d.m.rotation.x += dt * 8; d.m.rotation.z += dt * 6; }
+    else { d.m.position.y += d.vy * dt; d.m.scale.addScalar(d.grow * dt); d.m.material.opacity = .55 * Math.max(0, d.t / d.T); }
+    if (d.t <= 0) { world.remove(d.m); if (d.kind === 'smoke') d.m.material.dispose(); }
+  }
+  debris = debris.filter(d => d.t > 0);
+  for (const w of wrecks) {
+    w.t -= dt; w.st -= dt;
+    if (w.st <= 0 && w.t > 6) { w.st = .35; const p = w.m.position.clone(); p.y += .3; puffDark(p); }
+    if (w.t < 3) w.m.position.y -= dt * .08;
+    if (w.t <= 0) world.remove(w.m);
+  }
+  wrecks = wrecks.filter(w => w.t > 0);
+}
+let wrecks = [];
+const MAT_BURNT = new THREE.MeshLambertMaterial({ color: 0x1e1c1a, flatShading: true });
+function puffDark(p) {
+  const m = new THREE.Mesh(smokeGeo, new THREE.MeshLambertMaterial({ color: 0x2e2e2e, transparent: true, opacity: .45, depthWrite: false, flatShading: true }));
+  m.position.copy(p); m.scale.setScalar(.08); world.add(m);
+  debris.push({ m, vy: .45, t: 2.4, T: 2.4, grow: .22, kind: 'smoke' });
+}
+function addWreck(e) {
+  if (settings.gfx === 'low' || e.cls !== 'veh' || e.d.static) return;
+  const w = proto[e.type].clone();
+  w.traverse(o => { if (o.isMesh) o.material = MAT_BURNT; });
+  w.position.copy(e.mesh.position); w.rotation.copy(e.mesh.rotation); w.rotation.z = (Math.random() - .5) * .2;
+  world.add(w); wrecks.push({ m: w, t: 22, st: 0 });
 }
 function updateEffects(dt) {
   for (const f of effects) {
@@ -1139,7 +1334,7 @@ function hurt(e, dmg, mult) {
   }
   else { e.bar.root.visible = true; e.bar.set(e.hp / e.maxHp); }
 }
-function kill(e) { e.dead = true; world.remove(e.mesh); }
+function kill(e) { e.dead = true; world.remove(e.mesh); if (e.hp <= 0) addWreck(e); }
 function leak(e) {
   kill(e); lives = Math.max(0, lives - e.d.leak); sfx('leak');
   const fl = $('flash'); fl.classList.add('on'); setTimeout(() => fl.classList.remove('on'), 60);
@@ -1430,8 +1625,8 @@ function setWinter(w, announce) {
   for (const s of structs.values()) s.group.position.y = tileTop(s.i);
   for (const [ri, r] of rubble) r.position.y = tileTop(ri);
   applyTownWinter();
+  colorOuter(!!announce);
   if (announce) {
-    fades = [];
     if (tb) fadeAttr(tiles.instanceColor, tb);
     if (trb) fadeAttr(trees.instanceColor, trb);
     mats.forEach((m, k) => fadeMat(m, mb[k]));
@@ -1488,7 +1683,7 @@ function loadSector(id, snap) {
   scene.remove(world); world = new THREE.Group(); scene.add(world);
   structs.clear(); rubble.clear();
   strikes = []; nukes = []; radZones = []; shake = 0; sats = []; iceyeT = 0; specTile = -1; specMark.visible = false; supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
-  enemies = []; projectiles = []; effects = []; barrages = []; queue = []; barrageTimes = []; deer = []; shockwaves = [];
+  enemies = []; projectiles = []; effects = []; debris = []; wrecks = []; barrages = []; queue = []; barrageTimes = []; deer = []; shockwaves = [];
   money = cfg.money + 100 + (progress.upg.budget || 0) * 100; lives = 20; wave = 0; phase = 'build'; speed = 1; paused = false; gameOver = false; endless = false;
   if (!snap && progress.reserve > 0) { money += 250; progress.reserve--; }
   tool = null; selected = null; pendingTile = -1; barrageWarned = false; deerWarned = false; leaveArmed = 0;
@@ -1499,6 +1694,7 @@ function loadSector(id, snap) {
   buildTrees();
   buildTown();
   buildBorder();
+  buildSurroundings();
   fades = []; setCondition('clear', true);
   preview = new THREE.Group(); world.add(preview);
   if (cfg.reindeer) spawnDeer(cfg.reindeer);
@@ -2093,6 +2289,7 @@ renderer.domElement.addEventListener('pointerup', e => {
 });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
+  if (composer) composer.setSize(innerWidth, innerHeight);
 });
 $('startBtn').onclick = () => { $('overlay').hidden = true; showMap(); };
 setSoundEnabled(settings.sound);
@@ -2468,6 +2665,7 @@ function update(dt) {
   updateProjectiles(dt);
   updateBarrages(dt);
   updateEffects(dt);
+  updateDebris(dt);
   if (deer.length) updateDeer(dt);
   updateStrikes(dt);
   updateNukes(dt);
@@ -2479,7 +2677,7 @@ function update(dt) {
 }
 
 // käynnistys: näytetään ensimmäinen sektori taustalla
-genSector(cfg); winter = false; refreshAllTiles(); buildTrees(); buildTown(); buildBorder();
+genSector(cfg); winter = false; refreshAllTiles(); buildTrees(); buildTown(); buildBorder(); buildSurroundings();
 preview = new THREE.Group(); world.add(preview); recomputeFields();
 document.body.classList.add('onmap');
 
@@ -2492,6 +2690,7 @@ function frame(now) {
   else if (screen === 'sector' && deer.length && !paused) updateDeer(dt);
   updateHUD(false);
   if (screen === 'sector' && !paused) envStep(dt);
+  waterTex.offset.x = (now * .00002) % 1; waterTex.offset.y = (now * .000013) % 1;
   countdownTick(rawDt);
   if (screen === 'sector' && (now - supportUiT > 250)) { supportUiT = now; updateSupportUI(); }
   if (snow.visible && !paused) { const a = snowGeo.attributes.position.array; for (let k = 1; k < a.length; k += 3) { a[k] -= dt * 2.2; a[k - 1] -= dt * .8; if (a[k] < 0) { a[k] = 9; a[k - 1] = -4 + Math.random() * (W + 8); } } snowGeo.attributes.position.needsUpdate = true; }
@@ -2501,7 +2700,7 @@ function frame(now) {
   controls.update();
   let sx = 0, sy = 0;
   if (shake > 0) { const a = shake * .25; sx = (Math.random() - .5) * a; sy = (Math.random() - .5) * a; camera.position.x += sx; camera.position.y += sy; }
-  renderer.render(scene, camera);
+  if (composer) composer.render(); else renderer.render(scene, camera);
   camera.position.x -= sx; camera.position.y -= sy;
 }
 requestAnimationFrame(frame);

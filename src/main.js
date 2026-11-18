@@ -105,8 +105,15 @@ const B = (fi, en) => ({ fi, en });             // kaksikielinen raporttirivi
 const rt = r => (r && typeof r === 'object' ? L(r.fi, r.en) : r);
 // --- asetukset
 const SET_KEY = 'salpa.asetukset';
-const settings = { gfx: matchMedia('(pointer: coarse)').matches ? 'med' : 'high', sound: true, lang: 'fi', auto: true };
+const settings = { gfx: matchMedia('(pointer: coarse)').matches ? 'med' : 'high', sound: true, lang: 'fi', auto: true, diff: 'normal' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SET_KEY)) || {}); } catch (e) { /* oletukset */ }
+// vaikeustasot: hard = alkuperäinen tasapaino
+const DIFF = {
+  easy:   { money: 300, hpW: .04, dmgW: .02,  weekG: .015, count: .65, reward: 1.3,  edmg: .65, lives: 25 },
+  normal: { money: 200, hpW: .07, dmgW: .035, weekG: .025, count: .8,  reward: 1.15, edmg: .8, lives: 20 },
+  hard:   { money: 0,   hpW: .12, dmgW: .06,  weekG: .04,  count: 1,   reward: 1,    edmg: 1,  lives: 20 },
+};
+const dif = () => DIFF[settings.diff] || DIFF.normal;
 function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (e) { /* ohitetaan */ } }
 let spawnTimer = 0, waveTime = 0, hpMult = 1, dmgMult = 1;
 let fields = { inf: null, veh: null };
@@ -1355,7 +1362,7 @@ function hurt(e, dmg, mult) {
   if (e.dead) return; const m = mult[e.armor]; if (!m) return;
   e.hp -= dmg * m;
   if (e.hp <= 0) {
-    kill(e); money += e.d.reward; boom(e.x, e.y + .2, e.z, e.type === 'tank' || e.d.static || e.d.heli ? .8 : .4);
+    kill(e); money += Math.round(e.d.reward * dif().reward); boom(e.x, e.y + .2, e.z, e.type === 'tank' || e.d.static || e.d.heli ? .8 : .4);
     if (e.d.static) toast(L('Vihollisen tykistöpatteri tuhottu – tykistötuli lakkaa!', 'Enemy artillery battery destroyed – barrages stop!'), 'ok');
   }
   else { e.bar.root.visible = true; e.bar.set(e.hp / e.maxHp); }
@@ -1584,7 +1591,10 @@ function updateBarrages(dt) {
 // ================= AALLOT JA VUODENAJAT =================
 const seasonOf = n => cfg.winter.includes(n);
 function waveComp(n) {
-  const m = cfg.mix;
+  const m = cfg.mix, k = dif().count;
+  return Object.fromEntries(Object.entries(waveCompRaw(n, m)).map(([t, v]) => [t, v > 0 ? Math.max(1, Math.round(v * k)) : 0]));
+}
+function waveCompRaw(n, m) {
   return {
     inf: Math.round((4 + n * 2) * m.inf),
     bmp: n >= 3 ? Math.round((n - 1) * .8 * m.bmp) : 0,
@@ -1600,7 +1610,7 @@ function startWave() {
   if (phase !== 'build' || gameOver) return;
   autoT = -1; showCountdown();
   wave++; phase = 'wave'; waveTime = 0; spawnTimer = 0; specDone = wave < 5; specTile = -1; specMark.visible = false;
-  hpMult = (1 + .12 * (wave - 1)) * (1 + (progress.week - 1) * .04); dmgMult = 1 + .06 * (wave - 1);
+  const D = dif(); hpMult = (1 + D.hpW * (wave - 1)) * (1 + (progress.week - 1) * D.weekG); dmgMult = (1 + D.dmgW * (wave - 1)) * D.edmg;
   const c = waveComp(wave), items = [];
   const W8 = { inf: 0, bmp: .35, tank: .6, drone: Math.random(), heli: .5, ew: .45 };
   for (const [t, n] of Object.entries(c)) for (let k = 0; k < n; k++) items.push({ t, key: Math.random() + (t === 'drone' ? Math.random() : W8[t]) });
@@ -1668,7 +1678,7 @@ function endGame(win) {
   resolveBattle(cfg.id, win);
   const rep = first ? `<ul class="report">${progress.report.map(r => `<li>${rt(r)}</li>`).join('')}</ul>` : '';
   o.querySelector('.box').innerHTML = win
-    ? L(`<h2>🇫🇮 ${cfg.name} pitää!</h2><p>Torjuit kaikki ${battleWaves} aaltoa. ${cfg.city} on turvassa. Puolustuskykyä jäljellä ${lives}/20.</p><h3>Tilannekatsaus</h3>`, `<h2>🇫🇮 ${cfg.nameEn} holds!</h2><p>You repelled all ${battleWaves} waves. ${cfg.city} is safe. Defence ${lives}/20 left.</p><h3>Situation report</h3>`) + `${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 ${L('Takaisin kartalle', 'Back to map')}</button>${first ? `<button id="contBtn">${L('Jatka loputtomasti', 'Continue endlessly')}</button>` : ''}</div>`
+    ? L(`<h2>🇫🇮 ${cfg.name} pitää!</h2><p>Torjuit kaikki ${battleWaves} aaltoa. ${cfg.city} on turvassa. Puolustuskykyä jäljellä ${lives}/${dif().lives}.</p><h3>Tilannekatsaus</h3>`, `<h2>🇫🇮 ${cfg.nameEn} holds!</h2><p>You repelled all ${battleWaves} waves. ${cfg.city} is safe. Defence ${lives}/${dif().lives} left.</p><h3>Situation report</h3>`) + `${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 ${L('Takaisin kartalle', 'Back to map')}</button>${first ? `<button id="contBtn">${L('Jatka loputtomasti', 'Continue endlessly')}</button>` : ''}</div>`
     : L(`<h2>Puolustus murtui</h2><p>Kestit ${Math.max(0, wave - 1)} aaltoa. Vihollinen pääsi ${cfg.cityIn}.</p><h3>Tilannekatsaus</h3>`, `<h2>Defence broken</h2><p>You held ${Math.max(0, wave - 1)} waves. The enemy reached ${cfg.city}.</p><h3>Situation report</h3>`) + `${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 ${L('Takaisin kartalle', 'Back to map')}</button></div>`;
   $('mapBtn2').onclick = () => { o.hidden = true; showMap(); };
   if (win && first) $('contBtn').onclick = () => { endless = true; gameOver = false; o.hidden = true; };
@@ -1710,7 +1720,7 @@ function loadSector(id, snap) {
   structs.clear(); rubble.clear();
   strikes = []; nukes = []; radZones = []; shake = 0; sats = []; iceyeT = 0; specTile = -1; specMark.visible = false; supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
   enemies = []; projectiles = []; effects = []; debris = []; wrecks = []; barrages = []; queue = []; barrageTimes = []; deer = []; shockwaves = [];
-  money = cfg.money + 100 + (progress.upg.budget || 0) * 100; lives = 20; wave = 0; phase = 'build'; speed = 1; paused = false; gameOver = false; endless = false;
+  money = cfg.money + 100 + dif().money + (progress.upg.budget || 0) * 100; lives = dif().lives; wave = 0; phase = 'build'; speed = 1; paused = false; gameOver = false; endless = false;
   if (!snap && progress.reserve > 0) { money += 250; progress.reserve--; }
   tool = null; selected = null; pendingTile = -1; barrageWarned = false; deerWarned = false; leaveArmed = 0;
   genSector(cfg);
@@ -1950,6 +1960,8 @@ function openSettings() {
   openModal(`<h2>${ICONS.gear} ${L('Asetukset', 'Settings')}</h2>
     <div class="setrow"><span>${L('Grafiikka', 'Graphics')}</span><div class="segs">${opt('gfx', 'high', L('Korkea', 'High'))}${opt('gfx', 'med', L('Keski', 'Medium'))}${opt('gfx', 'low', L('Matala', 'Low'))}</div></div>
     <p class="small">${L('Matala: ei varjoja ja pienempi tarkkuus – sujuvampi heikoilla puhelimilla.', 'Low: no shadows and lower resolution – smoother on weak phones.')}</p>
+    <div class="setrow"><span>${L('Vaikeustaso', 'Difficulty')}</span><div class="segs">${opt('diff', 'easy', L('Helppo', 'Easy'))}${opt('diff', 'normal', L('Normaali', 'Normal'))}${opt('diff', 'hard', L('Vaikea', 'Hard'))}</div></div>
+    <p class="small">${L('Vaikeustaso vaikuttaa vihollisten määrään ja kestävyyteen, aloitusrahaan ja palkkioihin. Muutos tulee voimaan seuraavasta aallosta.', 'Difficulty affects enemy numbers and toughness, starting money and rewards. Takes effect from the next wave.')}</p>
     <div class="setrow"><span>${L('Äänet', 'Sound')}</span><div class="segs">${opt('sound', true, L('Päällä', 'On'))}${opt('sound', false, L('Pois', 'Off'))}</div></div>
     <div class="setrow"><span>${L('Aallot alkavat automaattisesti', 'Waves start automatically')}</span><div class="segs">${opt('auto', true, L('Päällä', 'On'))}${opt('auto', false, L('Pois', 'Off'))}</div></div>
     <div class="setrow"><span>${L('Kieli', 'Language')}</span><div class="segs">${opt('lang', 'fi', 'Suomi')}${opt('lang', 'en', 'English')}</div></div>

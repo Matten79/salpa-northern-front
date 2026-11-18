@@ -690,9 +690,9 @@ const MARK_GEO = mergeGeometries([
   coloredGeo(new THREE.ConeGeometry(.026, .03, 6).translate(0, .215, 0), 0xf4f6f8),
 ]);
 const BORDER_LINE_MAT = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .3, depthWrite: false });
-// --- tiemerkinnät: keltainen keskiviiva (katkoviiva) kuten Suomen teillä
-const LINE_MAT = new THREE.MeshLambertMaterial({ color: 0xf2c230 });
-const dashGeo = new THREE.PlaneGeometry(.2, .035).rotateX(-Math.PI / 2);
+// --- tiemerkinnät: valkoinen katkokeskiviiva (tieliikennelaki 2020), viiva:väli n. 1:3
+const LINE_MAT = new THREE.MeshLambertMaterial({ color: 0xf2f2ee });
+const dashGeo = new THREE.PlaneGeometry(.13, .03).rotateX(-Math.PI / 2);
 function buildRoadLines() {
   const mats = [];
   const add = (x, y, z, horiz) => { dummy.position.set(x, y, z); dummy.rotation.set(0, horiz ? 0 : Math.PI / 2, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); mats.push(dummy.matrix.clone()); };

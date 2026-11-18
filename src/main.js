@@ -1152,7 +1152,7 @@ function clipBorder(lat0, lat1) {
   const last = BORDER_LINE[BORDER_LINE.length - 1]; if (last[1] >= lat0 && last[1] <= lat1) out.push(last);
   return out;
 }
-let mapSel = SECTORS[0].id, resetArmed = 0;
+let mapSel = SECTORS[0].id, resetArmed = 0, mapTapId = null;
 function mostUrgent() { return [...SECTORS].sort((a, b) => threatOf(b.id) - threatOf(a.id))[0].id; }
 function buildMap() {
   const svg = $('mapSvg');
@@ -1188,7 +1188,13 @@ function buildMap() {
     h += `<text x="${mx + 32}" y="${my + 4}" class="mlabel sec">${s.short}</text></g>`;
   }
   svg.innerHTML = h;
-  svg.querySelectorAll('.hit').forEach(el => el.addEventListener('click', () => { mapSel = el.dataset.id; buildMap(); renderBrief(); }));
+  svg.querySelectorAll('.hit').forEach(el => el.addEventListener('click', () => {
+    const id = el.dataset.id, isMarker = el.tagName.toLowerCase() === 'g';
+    // toinen napautus jo valitun uhatun sektorin palloon -> suoraan taisteluun
+    if (isMarker && id === mapSel && mapTapId === id && !progress.over && levelOf(threatOf(id)) !== 'calm') { mapTapId = null; loadSector(id); return; }
+    mapTapId = isMarker ? id : null;
+    mapSel = id; buildMap(); renderBrief();
+  }));
 }
 function seasonRange(arr, n) {
   const w = arr.filter(x => x <= n);
@@ -1226,6 +1232,7 @@ function renderBrief() {
     <div class="row"><span>Aloitusbudjetti</span><b>${s.money} €</b></div>
     <div class="row"><span>Torjuttu täällä</span><b>${p.held[s.id] || 0}×</b></div>
     <button class="primary big" id="goBtn" ${lv === 'calm' ? 'disabled' : ''}>${lv === 'calm' ? 'Ei hyökkäystä – valitse uhattu sektori' : 'Puolusta sektoria ▶'}</button>
+    ${lv !== 'calm' ? '<div class="tip">Vinkki: napauta kartalla sektorin palloa uudelleen, niin pääset suoraan taisteluun.</div>' : ''}
     ${reds > 1 ? `<p class="warn">⚠ ${reds} sektoria on kiireellisiä. Jokainen viikko, jonka kiireellinen sektori jää ilman puolustusta, vie kestävyyttä.</p>` : reds === 1 && lv !== 'red' ? `<p class="warn">⚠ Kiireellinen sektori jää ilman puolustusta, jos taistelet täällä – kestävyys −1.</p>` : ''}
     <div class="secList">${SECTORS.map(x => { const l = levelOf(threatOf(x.id)); return `<button data-id="${x.id}" class="${x.id === mapSel ? 'sel' : ''} lv-${l}"><i style="background:${LEVEL[l].col}"></i>${LEVEL[l].badge ? LEVEL[l].badge + ' ' : ''}${x.short}</button>`; }).join('')}</div>
     <button class="ghost" id="resetCampBtn">Aloita kampanja alusta</button>`;
@@ -1238,7 +1245,7 @@ function renderBrief() {
 }
 function showMap() {
   screen = 'map'; running = false;
-  mapSel = mostUrgent();
+  mapSel = mostUrgent(); mapTapId = null;
   setTool(null); select(null);
   document.body.classList.add('onmap');
   $('mapScreen').hidden = false; $('overlay').hidden = true;

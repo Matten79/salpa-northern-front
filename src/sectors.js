@@ -1,10 +1,10 @@
 // Itärajan sektorit. Ruudukko 30×18, raja x=24 (x≥24 = Venäjä), puolustettava kaupunki lännessä (x<0).
 // Koordinaatit: [x, z] ruutuina; blobit [keskiX, keskiZ, säde].
 
-const SPRUCE = { n: 3, scale: 1, slim: 1, col: 0x2e5e33, winterCol: 0x557a68 };
-const MIXED = { n: 3, scale: .95, slim: 1, col: 0x35663a, winterCol: 0x5b7d6c };
-const NORTH_PINE = { n: 2, scale: .8, slim: .8, col: 0x3f6638, winterCol: 0x5f7f68 };
-const FELL_BIRCH = { n: 2, scale: .6, slim: .9, col: 0x5d7a3e, winterCol: 0x7d8f80 };
+const SPRUCE = { n: 3, scale: 1, slim: 1, col: 0x2e5e33, winterCol: 0x557a68, ruska: .22 };
+const MIXED = { n: 3, scale: .95, slim: 1, col: 0x35663a, winterCol: 0x5b7d6c, ruska: .5 };
+const NORTH_PINE = { n: 2, scale: .8, slim: .8, col: 0x3f6638, winterCol: 0x5f7f68, ruska: .3 };
+const FELL_BIRCH = { n: 2, scale: .6, slim: .9, col: 0x5d7a3e, winterCol: 0x7d8f80, ruska: .9 };
 
 export const SECTORS = [
   {

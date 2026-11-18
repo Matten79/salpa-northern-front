@@ -81,20 +81,28 @@ const FORT_HP = [1, 2, 3.5], FORT_RED = [0, .3, .5], FORT_COST = [90, 170];
 const FORT_NAME = [['Ei linnoitettu', 'None'], ['Hiekkasäkit', 'Sandbags'], ['Betonibunkkeri', 'Concrete bunker']];
 // maastokustannus [kesä, talvi][FIELD, FOREST, ROAD, SWAMP, LAKE, FELL, SEA]
 const COST = {
-  inf: [[1.2, 1.6, 1, 2.5, INF, 2.2, INF], [1.2, 1.6, 1, 1.4, 1.2, 2.4, INF]],
-  veh: [[1.8, 3.5, 1, INF, INF, INF, INF], [1.8, 3.5, 1, 2.2, 1.6, INF, INF]],
+  // vuodenajat: 0 kesä, 1 talvi, 2 syksy (kelirikko), 3 kevät (kelirikko, heikot jäät)
+  inf: [[1.2, 1.6, 1, 2.5, INF, 2.2, INF], [1.2, 1.6, 1, 1.4, 1.2, 2.4, INF], [1.4, 1.7, 1, 3, INF, 2.4, INF], [1.5, 1.8, 1, 3.2, INF, 2.6, INF]],
+  veh: [[1.8, 3.5, 1, INF, INF, INF, INF], [1.8, 3.5, 1, 2.2, 1.6, INF, INF], [2.6, 4.2, 1, INF, INF, INF, INF], [3, 4.5, 1, INF, INF, INF, INF]],
 };
 const PAL_BASE = [
   [0x86ad4b, 0x4c7a35, 0x5e5e60, 0x7c7a4c, 0x3a78b8, 0x9c9a80, 0x2d5f90],
   [0xedf2f5, 0xd2dde2, 0x8d9297, 0xc6d1d4, 0xaed6ec, 0xf9fbfc, 0x3f6f9a],
+  [0xa39150, 0x56632f, 0x5b5b5d, 0x8d6c42, 0x2f6a9e, 0x9c6e4a, 0x2a5a88],
+  [0x857a55, 0x45673a, 0x606062, 0x7a7656, 0x6e9bbb, 0xd9ddd6, 0x2f6090],
 ];
+const SEASON = [
+  { fi: 'Kesä', en: 'Summer', icon: '☀️' }, { fi: 'Talvi', en: 'Winter', icon: '❄️' },
+  { fi: 'Syksy', en: 'Autumn', icon: '🍂' }, { fi: 'Kevät', en: 'Spring', icon: '🌱' },
+];
+const seasonName = s => `${SEASON[s].icon} ${L(SEASON[s].fi, SEASON[s].en)}`;
 const BASEH = [.30, .32, .31, .26, .12, .62, .08];
 const TERRAIN_NAME = [['pelto', 'field'], ['metsä', 'forest'], ['tie', 'road'], ['suo', 'swamp'], ['järvi', 'lake'], ['tunturi', 'fell'], ['meri', 'sea']];
 
 // ================= TILA =================
 let cfg = SECTORS[0], PAL = PAL_BASE, battleWaves = 10;
 let screen = 'intro';
-let winter = false, money = 650, lives = 20, wave = 0, phase = 'build', speed = 1;
+let season = 0, winter = false, money = 650, lives = 20, wave = 0, phase = 'build', speed = 1;
 let paused = false, gameOver = false, running = false, endless = false;
 let tool = null, selected = null, pendingTile = -1, barrageWarned = false, deerWarned = false, leaveArmed = 0;
 let units = [], cleared = new Set(), cond = 'clear', nextCond = 'clear', specDone = false;
@@ -262,7 +270,7 @@ function genSector(c) {
     if (t === ROAD) spawns.veh.push(i);
     if (t !== LAKE && t !== SEA && t !== FELL && (t === ROAD || z % 3 === 1)) spawns.inf.push(i);
   }
-  PAL = [PAL_BASE[0].slice(), PAL_BASE[1].slice()];
+  PAL = PAL_BASE.map(r => r.slice());
   for (const [k, v] of Object.entries(c.pal || {})) PAL[0][k] = v;
 }
 
@@ -271,7 +279,7 @@ function tileCost(cls, i, isWinter, extra) {
   let kind = structs.has(i) ? structs.get(i).kind : null;
   if (extra && extra.i === i) kind = extra.kind;
   if (kind && TOWERS.has(kind)) return INF;
-  let c = COST[cls][isWinter ? 1 : 0][terr[i]];
+  let c = COST[cls][+isWinter][terr[i]];
   if (kind === 'obstacle') { if (cls === 'veh') return INF; c += 2; }
   return c;
 }
@@ -323,17 +331,17 @@ function bestNext(f, c) {
   return best;
 }
 function recomputeFields() {
-  fields.inf = dijkstra(i => tileCost('inf', i, winter));
-  fields.veh = dijkstra(i => tileCost('veh', i, winter));
+  fields.inf = dijkstra(i => tileCost('inf', i, season));
+  fields.veh = dijkstra(i => tileCost('veh', i, season));
   updatePreview();
 }
 function pathOk(kind, i) {
   for (const cls of ['inf', 'veh']) {
     if (kind === 'obstacle' && cls === 'inf') continue;
     if (!spawns[cls].length) continue;
-    const fs = dijkstra(j => tileCost(cls, j, false, { i, kind })).dist;
+    const fs = dijkstra(j => tileCost(cls, j, 0, { i, kind })).dist;
     if (!spawns[cls].some(s => fs[s] < INF)) return false;
-    const fc = winter ? dijkstra(j => tileCost(cls, j, true, { i, kind })).dist : fs;
+    const fc = season ? dijkstra(j => tileCost(cls, j, season, { i, kind })).dist : fs;
     for (const e of enemies) if (!e.dead && !e.d.static && e.cls === cls && fc[e.cur] >= INF) return false;
   }
   return true;
@@ -348,7 +356,7 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .98;
 $('app').appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-const SKY = [0x9fc4dd, 0xc3d2dc];
+const SKY = [0x9fc4dd, 0xc3d2dc, 0xa3b3bf, 0xaacbe0];
 scene.background = new THREE.Color(SKY[0]);
 scene.fog = new THREE.Fog(SKY[0], 45, 90);
 // taivaskupoli: liukuväri horisontista zeniittiin
@@ -439,14 +447,15 @@ function pickCond(n) {
   if (r < .45) return 'clear';
   if (r < .7) return 'night';
   if (r < .85) return 'fog';
-  return seasonOf(n) ? 'storm' : 'fog';
+  if (seasonOf(n) === 2 && r < .93) return 'fog';   // syksyn sumut
+  return seasonOf(n) === 1 ? 'storm' : 'fog';
 }
 // Ympäristö (taivas, sumu, valot, lumisade) liukuu kohti tavoitetta – ei äkillisiä vaihtoja.
 const mkEnv = () => ({ bg: new THREE.Color(SKY[0]), fogN: 45, fogF: 90, hI: 1.4, sI: 2.2, hC: new THREE.Color(0xe4f0ff), sC: new THREE.Color(0xfff4e0), snow: 0 });
 const env = mkEnv(), envT = mkEnv();
 function setCondition(c, instant) {
   cond = c;
-  let bg = SKY[winter ? 1 : 0], fogN = 45, fogF = 90, hI = 1.4, sI = 2.2, hC = 0xe4f0ff, sC = 0xfff4e0;
+  let bg = SKY[season], fogN = 45, fogF = 90, hI = 1.4, sI = 2.2, hC = 0xe4f0ff, sC = 0xfff4e0;
   if (c === 'night') { bg = 0x16213a; fogN = 30; fogF = 75; hI = .45; sI = .5; hC = 0x8fa6d8; sC = 0x9fb4ff; }
   else if (c === 'fog') { bg = winter ? 0xd5dce0 : 0xb4bec4; fogN = 12; fogF = 44; hI = 1.2; sI = 1.1; }
   else if (c === 'storm') { bg = 0xc9d2d8; fogN = 14; fogF = 48; hI = 1.1; sI = .9; }
@@ -508,8 +517,10 @@ function refreshTile(i) {
   tileH[i] = h;
   dummy.position.set(x + .5, 0, z + .5); dummy.scale.set(1, h, 1); dummy.rotation.set(0, 0, 0); dummy.updateMatrix();
   tiles.setMatrixAt(i, dummy.matrix);
-  tmpCol.setHex(PAL[winter ? 1 : 0][t]);
-  if (t === FELL && !winter) tmpCol.lerp(new THREE.Color(0xdedbd0), clamp((h - .7) * 2, 0, .6));
+  tmpCol.setHex(PAL[season][t]);
+  if (t === FELL && season === 0) tmpCol.lerp(new THREE.Color(0xdedbd0), clamp((h - .7) * 2, 0, .6));
+  if (season === 2 && (t === FIELD || t === FELL || t === SWAMP)) tmpCol.lerp(new THREE.Color(hash2(x + 9, z) < .5 ? 0xb5682f : 0xc79a3a), hash2(x, z + 4) * .35);   // ruska
+  if (season === 3 && t !== ROAD && t !== LAKE && t !== SEA && vnoise(x * .45 + 7, z * .45) > .62) tmpCol.lerp(new THREE.Color(0xeef2f4), .6);   // lumilaikut
   if (x >= BORDER) tmpCol.multiplyScalar(.8);
   tmpCol.multiplyScalar(.94 + hash2(x + 3, z + 5) * .08);
   tiles.setColorAt(i, tmpCol);
@@ -590,7 +601,7 @@ function buildSurroundings() {
   list.forEach(([x, z], k) => {
     const sc = (.8 + rnd() * .6) * cfg.trees.scale; dummy.position.set(x, .27, z); dummy.scale.set(sc * cfg.trees.slim, sc, sc * cfg.trees.slim); dummy.rotation.y = rnd() * 6; dummy.updateMatrix();
     outerTrees.setMatrixAt(k, dummy.matrix);
-    tmpCol.setHex(winter ? cfg.trees.winterCol : cfg.trees.col).multiplyScalar(.75 + rnd() * .3); outerTrees.setColorAt(k, tmpCol);
+    treeCol(k + 5000).multiplyScalar(.75 + rnd() * .3); outerTrees.setColorAt(k, tmpCol);
   });
   dummy.rotation.set(0, 0, 0);
   world.add(outerTrees);
@@ -614,11 +625,11 @@ function buildSurroundings() {
   colorOuter(false);
 }
 function colorOuter(fade) {
-  const target = new THREE.Color(PAL[winter ? 1 : 0][FOREST]).lerp(new THREE.Color(PAL[winter ? 1 : 0][FIELD]), winter ? .5 : .15).multiplyScalar(winter ? .92 : .66);
+  const target = new THREE.Color(PAL[season][FOREST]).lerp(new THREE.Color(PAL[season][FIELD]), winter ? .5 : .15).multiplyScalar(winter ? .92 : .66);
   if (fade) { const before = outerMat.color.clone(); outerMat.color.copy(target); fadeMat(outerMat, before); } else outerMat.color.copy(target);
   if (outerTrees && outerTrees.instanceColor) {
     const b = Float32Array.from(outerTrees.instanceColor.array);
-    for (let k = 0; k < outerTrees.count; k++) { tmpCol.setHex(winter ? cfg.trees.winterCol : cfg.trees.col).multiplyScalar(.75 + hash2(k, 31) * .3); outerTrees.setColorAt(k, tmpCol); }
+    for (let k = 0; k < outerTrees.count; k++) { treeCol(k + 5000).multiplyScalar(.75 + hash2(k, 31) * .3); outerTrees.setColorAt(k, tmpCol); }
     outerTrees.instanceColor.needsUpdate = true;
     if (fade) fadeAttr(outerTrees.instanceColor, b);
   }
@@ -646,9 +657,18 @@ function buildTrees() {
   dummy.rotation.set(0, 0, 0);
   colorTrees();
 }
+// puun väri vuodenajan mukaan; syksyllä lehtipuut ruskan värein
+const RUSKA = [0xd9a52b, 0xc9772a, 0xb2452c, 0xe0c140];
+function treeCol(k) {
+  const T = cfg.trees;
+  if (season === 1) return tmpCol.setHex(T.winterCol);
+  if (season === 2) return tmpCol.setHex(hash2(k, 17) < (T.ruska || 0) ? RUSKA[(hash2(k, 23) * 4) | 0] : T.col).multiplyScalar(hash2(k, 17) < (T.ruska || 0) ? 1 : .9);
+  if (season === 3) return tmpCol.setHex(T.col).lerp(new THREE.Color(0x7d8a5a), hash2(k, 17) < (T.ruska || 0) ? .55 : .12);
+  return tmpCol.setHex(T.col);
+}
 function colorTrees() {
   for (let k = 0; k < trees.count; k++) {
-    tmpCol.setHex(winter ? cfg.trees.winterCol : cfg.trees.col).multiplyScalar(.85 + hash2(k, 7) * .3);
+    treeCol(k).multiplyScalar(.85 + hash2(k, 7) * .3);
     trees.setColorAt(k, tmpCol);
   }
   trees.instanceColor.needsUpdate = true;
@@ -1447,7 +1467,7 @@ function destroyStruct(s, byEnemy) {
 function unitPassable(i) {
   if (i < 0 || ix(i) >= BORDER) return false;
   const st = structs.get(i); if (st && TOWERS.has(st.kind)) return false;
-  return COST.veh[winter ? 1 : 0][terr[i]] < INF;
+  return COST.veh[season][terr[i]] < INF;
 }
 function spawnUnit(kind, i, free) {
   const def = DEFS[kind];
@@ -1484,7 +1504,7 @@ function unitPath(from, to) {
       const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
       const j = idx(nx, nz); if (!unitPassable(j)) continue;
       const diag = dx && dz; if (diag && (!unitPassable(idx(x + dx, z)) || !unitPassable(idx(x, z + dz)))) continue;
-      const nd = dist[c] + COST.veh[winter ? 1 : 0][terr[j]] * (diag ? 1.414 : 1);
+      const nd = dist[c] + COST.veh[season][terr[j]] * (diag ? 1.414 : 1);
       if (nd < dist[j]) { if (dist[j] >= INF) open.push(j); dist[j] = nd; prev[j] = c; }
     }
   }
@@ -1508,7 +1528,7 @@ function updateUnits(dt) {
       if (!unitPassable(n)) { u.path = []; }
       else {
         const tx = ix(n) + .5, tz = iz(n) + .5, dx = tx - u.x, dz = tz - u.z, d = Math.hypot(dx, dz);
-        const st = u.def.speed / Math.min(COST.veh[winter ? 1 : 0][terr[u.i]], 4) * dt;
+        const st = u.def.speed / Math.min(COST.veh[season][terr[u.i]], 4) * dt;
         if (d <= st) { u.x = tx; u.z = tz; u.i = n; u.path.shift(); clearTile(n); }
         else { u.x += dx / d * st; u.z += dz / d * st; u.rot = lerpAngle(u.rot, -Math.atan2(dz, dx), dt * 6); }
       }
@@ -1783,7 +1803,14 @@ function updateBarrages(dt) {
 }
 
 // ================= AALLOT JA VUODENAJAT =================
-const seasonOf = n => cfg.winter.includes(n);
+// vuodenaika aallolle: talven ympärillä kaksi syksyn ja kaksi kevään aaltoa
+function seasonOf(n) {
+  const w = cfg.winter; if (!w.length) return 0;
+  if (w.includes(n)) return 1;
+  const a = Math.min(...w), b = Math.max(...w);
+  if (n < a) return n >= a - 2 ? 2 : 0;
+  return n <= b + 2 ? 3 : 0;
+}
 function waveComp(n) {
   const m = cfg.mix, k = dif().count;
   return Object.fromEntries(Object.entries(waveCompRaw(n, m)).map(([t, v]) => [t, v > 0 ? Math.max(1, Math.round(v * k)) : 0]));
@@ -1838,15 +1865,21 @@ function endWave() {
   progress.best[cfg.id] = Math.max(progress.best[cfg.id] || 0, wave); saveProgress();
   toast(L(`Aalto ${wave} torjuttu! +${bonus} €`, `Wave ${wave} repelled! +${bonus} €`), 'ok');
   if (wave === battleWaves && !endless) { endGame(true); }
-  const w = seasonOf(wave + 1);
-  if (w !== winter) setWinter(w, true);
-  if (nextCond === 'storm' && !seasonOf(wave + 1)) nextCond = 'fog';
+  const sn = seasonOf(wave + 1);
+  if (sn !== season) setSeason(sn, true);
+  if (nextCond === 'storm' && sn !== 1) nextCond = 'fog';
   preview.visible = true; updateHUD(true);
   saveBattle();
   if (!gameOver) autoT = AUTO_SEC;
 }
-function setWinter(w, announce) {
-  winter = w;
+const SEASON_MSG = [
+  ['☀️ Kesä – maa on kuivaa, ajoneuvot liikkuvat pelloillakin.', '☀️ Summer – the ground is dry, vehicles can cross fields.'],
+  ['❄️ Talvi saapui – järvet ja suot jäätyivät. Panssarit pääsevät jäitä pitkin!', '❄️ Winter has come – lakes and swamps froze. Tanks can now cross the ice!'],
+  ['🍂 Syksy – ruska ja kelirikko. Pellot ja metsät pehmenivät, ajoneuvot pysyttelevät teillä. Sumu yleistyy.', '🍂 Autumn – the mud season. Fields and forests turned soft, vehicles keep to the roads. Fog is more common.'],
+  ['🌱 Kevät – jäät heikkenivät eivätkä enää kanna, ja kelirikko on pahimmillaan. Ajoneuvot ovat sidottuja teihin.', '🌱 Spring – the ice is too weak to carry and the mud season is at its worst. Vehicles are tied to the roads.'],
+];
+function setSeason(sn, announce) {
+  season = sn; const w = winter = sn === 1;
   const tb = tiles.instanceColor ? Float32Array.from(tiles.instanceColor.array) : null;
   const trb = trees && trees.instanceColor ? Float32Array.from(trees.instanceColor.array) : null;
   const mats = [MAT.flatRoof, MAT.roof, MAT.street].concat(townGround ? [townGround.material] : []);
@@ -1863,7 +1896,7 @@ function setWinter(w, announce) {
   }
   setCondition(phase === 'wave' ? cond : 'clear');
   recomputeFields();
-  if (announce) toast(w ? L('❄️ Talvi saapui – järvet ja suot jäätyivät. Panssarit pääsevät jäitä pitkin!', '❄️ Winter has come – lakes and swamps froze. Tanks can now cross the ice!') : L('☀️ Sulan maan aika – jäät sulivat, järvet ja suot ovat taas esteitä.', '☀️ The thaw – the ice melted, lakes and swamps are obstacles again.'), 'info', 5000);
+  if (announce) toast(L(...SEASON_MSG[sn]), 'info', 5500);
 }
 function endGame(win) {
   gameOver = true; autoT = -1; showCountdown(); const o = $('overlay'); o.hidden = false;
@@ -1918,7 +1951,7 @@ function loadSector(id, snap) {
   if (!snap && progress.reserve > 0) { money += 250; progress.reserve--; }
   tool = null; selected = null; pendingTile = -1; barrageWarned = false; deerWarned = false; leaveArmed = 0;
   genSector(cfg);
-  winter = seasonOf(1);
+  season = seasonOf(1); winter = season === 1;
   cond = 'clear'; nextCond = 'clear';
   refreshAllTiles();
   buildTrees();
@@ -1948,7 +1981,7 @@ function loadSector(id, snap) {
   }
   if (snap) {
     money = snap.money; lives = snap.lives; wave = snap.wave; nextCond = snap.nextCond || 'clear';
-    if (seasonOf(wave + 1) !== winter) { winter = seasonOf(wave + 1); refreshAllTiles(); colorTrees(); applyTownWinter(); for (const st of structs.values()) st.group.position.y = tileTop(st.i); }
+    if (seasonOf(wave + 1) !== season) { season = seasonOf(wave + 1); winter = season === 1; refreshAllTiles(); colorTrees(); applyTownWinter(); for (const st of structs.values()) st.group.position.y = tileTop(st.i); }
   } else if (!progress.battle) {
     nextCond = 'clear';
   }
@@ -2046,11 +2079,12 @@ function buildMap() {
     mapSel = id; buildMap(); renderBrief();
   }));
 }
-function seasonRange(arr, n) {
-  const w = arr.filter(x => x <= n);
-  if (!w.length) return L('ei talvea', 'no winter');
-  return L(`aallot ${w[0]}–${w[w.length - 1]}`, `waves ${w[0]}–${w[w.length - 1]}`);
+function seasonRange(arr, n, sn = 1) {
+  const w = []; for (let k = 1; k <= n; k++) if ((arr.length ? seasonOfArr(arr, k) : 0) === sn) w.push(k);
+  if (!w.length) return L('ei', 'none');
+  return w.length === 1 ? L(`aalto ${w[0]}`, `wave ${w[0]}`) : L(`aallot ${w[0]}–${w[w.length - 1]}`, `waves ${w[0]}–${w[w.length - 1]}`);
 }
+function seasonOfArr(arr, k) { const c = cfg; cfg = { winter: arr }; const r = seasonOf(k); cfg = c; return r; }
 function renderBrief() {
   const p = progress;
   if (p.over) {
@@ -2091,7 +2125,7 @@ function renderBrief() {
       <div class="bar"><i style="width:${t}%;background:${LV.col}"></i></div></div>
     <p>${L(s.desc, s.descEn || s.desc)}</p>
     <ul class="facts">${(settings.lang === 'en' && s.factsEn ? s.factsEn : s.facts).map(f => `<li>${f}</li>`).join('')}
-      <li>❄️ ${L('Talvi', 'Winter')}: ${seasonRange(s.winter, waves)}</li>
+      ${[2, 1, 3].map(sn => seasonRange(s.winter, waves, sn) !== L('ei', 'none') ? `<li>${seasonName(sn)}: ${seasonRange(s.winter, waves, sn)}</li>` : '').join('')}
       ${s.reindeer ? `<li>🦌 ${L('Poroja maastossa – ne hidastavat vihollisen ajoneuvoja', 'Reindeer roam here – they slow enemy vehicles')}</li>` : ''}
       ${p.upg.iceye && p.forecast ? `<li>🛰 ${L('ICEYE-ennuste: uhka', 'ICEYE forecast: threat')} +${p.forecast[s.id]} ${L('ensi viikolla', 'next week')}${levelOf(Math.min(100, t + p.forecast[s.id])) !== lv ? L(` → <b>${LEVEL[levelOf(Math.min(100, t + p.forecast[s.id]))].label}</b>`, ` → <b>${LEVEL[levelOf(Math.min(100, t + p.forecast[s.id]))].labelEn}</b>`) : ''}</li>` : ''}
       ${p.forts[s.id] && p.forts[s.id].structs.length ? `<li>🛡 ${L(`Säilyneitä asemia: ${p.forts[s.id].structs.length + p.forts[s.id].units.length}`, `Surviving positions: ${p.forts[s.id].structs.length + p.forts[s.id].units.length}`)}</li>` : ''}
@@ -2402,12 +2436,12 @@ function panelAction(a) {
 let lastHud = '';
 function updateHUD(force) {
   if (screen !== 'sector') return;
-  const key = `${money}|${lives}|${wave}|${phase}|${winter}|${speed}|${paused}|${cond}|${nextCond}`;
+  const key = `${money}|${lives}|${wave}|${phase}|${season}|${speed}|${paused}|${cond}|${nextCond}`;
   if (!force && key === lastHud) return;
   const moneyChanged = !lastHud.startsWith(money + '|'); lastHud = key;
   $('money').textContent = money; $('lives').textContent = lives;
   $('wave').textContent = `${wave}/${battleWaves}`;
-  $('season').textContent = (winter ? L('❄️ Talvi', '❄️ Winter') : L('☀️ Sula maa', '☀️ Thaw')) + (phase === 'wave' && cond !== 'clear' ? ` · ${COND[cond].icon} ${L(COND[cond].name, COND[cond].en)}` : '');
+  $('season').textContent = seasonName(season) + (phase === 'wave' && cond !== 'clear' ? ` · ${COND[cond].icon} ${L(COND[cond].name, COND[cond].en)}` : '');
   $('speedBtn').textContent = speed + '×'; $('pauseBtn').textContent = paused ? '▶' : '⏸';
   const wb = $('waveBtn'); wb.disabled = phase !== 'build';
   wb.classList.toggle('first', phase === 'build' && wave === 0);
@@ -2420,7 +2454,7 @@ function updateHUD(force) {
     if (c.heli) parts.push(`${c.heli}× ${L('taisteluhelikopteri', 'attack helicopter')}`); if (c.ew && spawns.veh.length) parts.push(`${c.ew}× ${L('häirintäasema', 'EW jammer')}`);
     const art = (wave + 1 >= 6 ? L(' · tykistöpatteri rajan takana', ' · artillery battery across the border') : '') + (wave + 1 >= 5 ? L(' · erikoisjoukkojen uhka', ' · special forces threat') : '');
     const nc = COND[nextCond]; const condTxt = nextCond !== 'clear' ? `<br>${nc.icon} <b>${L('Sää', 'Weather')}: ${L(nc.name, nc.en)}</b> – ${L(nc.desc, nc.descEn)}` : '';
-    $('intel').innerHTML = `<b>${L('Tiedustelu, aalto', 'Intel, wave')} ${wave + 1}${seasonOf(wave + 1) ? L(' (talvi)', ' (winter)') : ''}:</b> ${parts.join(', ')}${art}${condTxt}<br><small><span class="lv">━ ━</span> ${L('ajoneuvojen reitti', 'vehicle route')} &nbsp; <span class="li">┅┅</span> ${L('jalkaväen reitit', 'infantry routes')}</small>`;
+    $('intel').innerHTML = `<b>${L('Tiedustelu, aalto', 'Intel, wave')} ${wave + 1}${seasonOf(wave + 1) ? ` (${L(SEASON[seasonOf(wave + 1)].fi, SEASON[seasonOf(wave + 1)].en).toLowerCase()})` : ''}:</b> ${parts.join(', ')}${art}${condTxt}<br><small><span class="lv">━ ━</span> ${L('ajoneuvojen reitti', 'vehicle route')} &nbsp; <span class="li">┅┅</span> ${L('jalkaväen reitit', 'infantry routes')}</small>`;
     $('intel').hidden = false;
   } else $('intel').hidden = true;
   if (moneyChanged && selected) refreshPanel();
@@ -2928,7 +2962,7 @@ function update(dt) {
 }
 
 // käynnistys: näytetään ensimmäinen sektori taustalla
-genSector(cfg); winter = false; refreshAllTiles(); buildTrees(); buildTown(); buildBorder(); buildRoadLines(); buildSurroundings();
+genSector(cfg); season = 0; winter = false; refreshAllTiles(); buildTrees(); buildTown(); buildBorder(); buildRoadLines(); buildSurroundings();
 preview = new THREE.Group(); world.add(preview); recomputeFields();
 document.body.classList.add('onmap');
 

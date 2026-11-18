@@ -1,0 +1,26 @@
+{
+  "name": "Salpa: Northern Front",
+  "short_name": "Salpa",
+  "description": "Itärajan puolustus – tower defence -peli Suomen itärajalta.",
+  "lang": "fi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0d141b",
+  "theme_color": "#0d141b",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -65,4 +65,38 @@ export const ICONS = {
     <circle cx="24" cy="25.5" r="2.4" stroke="none"/>
     <path d="M27 9 L30.5 4.5" fill="none" stroke-width="1.6"/>
     <path d="M29 3 L31 5" fill="none" stroke-width="1" opacity=".6"/>`),
+  // K9 Moukari: panssarihaupitsi
+  k9: svg(`
+    <rect x="2" y="17" width="20" height="7" rx="1.5" stroke="none"/>
+    <rect x="6" y="12" width="12" height="6" rx="1.2" stroke="none"/>
+    <path d="M16 14 L31 7" fill="none" stroke-width="2.6"/>
+    <rect x="1" y="23.5" width="22" height="4" rx="2" stroke="none" opacity=".75"/>
+    <circle cx="5" cy="25.5" r="1" fill="#0d141b" stroke="none"/><circle cx="12" cy="25.5" r="1" fill="#0d141b" stroke="none"/><circle cx="19" cy="25.5" r="1" fill="#0d141b" stroke="none"/>`),
+  // NASAMS: ohjuskontit ja tutka
+  nasams: svg(`
+    <rect x="3" y="22" width="18" height="5" rx="1" stroke="none"/>
+    <path d="M6 22 L10 9 L22 13 L18 22 Z" stroke="none"/>
+    <path d="M9 13 L20 16.5 M8 17 L19 20" fill="none" stroke="#0d141b" stroke-width="1" opacity=".6"/>
+    <path d="M22 12 L29 4" fill="none" stroke-width="1.4"/>
+    <path d="M27.5 3 L30.5 4 L29 6.5 Z" stroke="none"/>
+    <rect x="24" y="18" width="5" height="9" rx="1" stroke="none" opacity=".8"/>`),
+  // Leopard 2A6
+  leo: svg(`
+    <path d="M2 19 L5 15 L25 15 L29 19 L27 24 L4 24 Z" stroke="none"/>
+    <path d="M8 15 L10 10 L20 10 L22 15 Z" stroke="none"/>
+    <path d="M20 12 L31 11" fill="none" stroke-width="2"/>
+    <rect x="3" y="24" width="24" height="4" rx="2" stroke="none" opacity=".75"/>`),
+  // Patria AMV
+  amv: svg(`
+    <path d="M2 21 L4 13 L22 13 L29 17 L29 22 L2 22 Z" stroke="none"/>
+    <rect x="11" y="9" width="7" height="4" rx="1" stroke="none"/>
+    <path d="M17 10.5 L26 10.5" fill="none" stroke-width="1.4"/>
+    <circle cx="6" cy="24" r="2.6" stroke="none"/><circle cx="12" cy="24" r="2.6" stroke="none"/><circle cx="19" cy="24" r="2.6" stroke="none"/><circle cx="25" cy="24" r="2.6" stroke="none"/>`),
+  // purku: lekahammer ja rikkoutunut kivi
+  demolish: svg(`
+    <path d="M6 27 L18 15" fill="none" stroke-width="3"/>
+    <path d="M14 9 L20 3 L29 12 L23 18 Z" stroke="none"/>
+    <path d="M3 29 L9 23 M2 22 L6 24 M10 30 L8 26" fill="none" stroke-width="1.6" opacity=".7"/>`),
+  // asetukset (ratas)
+  gear: svg(`<circle cx="16" cy="16" r="5" fill="none" stroke-width="3"/><path d="M16 3v5M16 24v5M3 16h5M24 16h5M6.8 6.8l3.5 3.5M21.7 21.7l3.5 3.5M6.8 25.2l3.5-3.5M21.7 10.3l3.5-3.5" fill="none" stroke-width="3"/>`),
 };

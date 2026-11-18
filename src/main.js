@@ -3,6 +3,7 @@ import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SECTORS, FIN_OUTLINE, BORDER_LINE, CITIES } from './sectors.js';
 import { ICONS } from './icons.js';
+import { initAudio, sfx, setSoundEnabled } from './audio.js';
 
 // ================= PERUSVAKIOT =================
 const W = 30, H = 18, BORDER = 24, N = W * H, INF = 1e9;
@@ -42,22 +43,34 @@ function lerpAngle(a, b, t) {
 
 // ================= MÄÄRITYKSET =================
 const DEFS = {
-  mg:       { name: 'Konekivääriasema', short: 'KK', cost: 100, range: 3.5, interval: 0.18, dmg: 5, mult: [1, .3, .05, .6], hp: 80, ground: true, air: true, desc: 'Halpa. Tehokas jalkaväkeä vastaan, ampuu myös lennokkeja.' },
-  mortar:   { name: 'Raskas kranaatinheitin', short: 'KRH', cost: 200, range: 6.5, minRange: 1.5, interval: 3.2, dmg: 45, splash: 1.2, mult: [1, .5, .25, 0], hp: 90, ground: true, desc: 'Pitkä kantama ja aluevaikutus. Ei ammu aivan lähelle.' },
-  atgm:     { name: 'Panssarintorjuntaohjus', short: 'PST', cost: 250, range: 5, interval: 2.6, dmg: 140, mult: [.4, 1, 1, 0], hp: 90, ground: true, desc: 'Tuhoaa panssarivaunuja ja BMP:itä.' },
-  aa:       { name: 'Ilmatorjunta', short: 'IT', cost: 180, range: 5, interval: 0.25, dmg: 9, mult: [0, 0, 0, 1], hp: 80, air: true, desc: 'Ampuu vain lennokkeja – ne iskevät asemiisi.' },
-  obstacle: { name: 'Hammaskivet', short: 'Este', cost: 30, passive: true, desc: 'Pysäyttää ajoneuvot, hidastaa jalkaväkeä. Voi asettaa tielle.' },
-  mine:     { name: 'Panssarimiinoite', short: 'Miina', cost: 60, passive: true, charges: 3, dmg: 160, desc: 'Räjähtää ajoneuvon alla (3 kertaa). Ei estä kulkua.' },
+  // mult = vahinkokerroin [jalkaväki, kevyt, raskas, lennokki, helikopteri]
+  mg:       { name: 'Konekivääriasema', nameEn: 'Machine-gun post', descEn: 'Cheap. Effective against infantry, also shoots drones.', short: 'KK', cost: 100, range: 3.5, interval: 0.18, dmg: 5, mult: [1, .3, .05, .6, .25], hp: 80, ground: true, air: true, desc: 'Halpa. Tehokas jalkaväkeä vastaan, ampuu myös lennokkeja.' },
+  mortar:   { name: 'Raskas kranaatinheitin', nameEn: 'Heavy mortar', descEn: 'Long range and area damage. Cannot fire at very close range.', short: 'KRH', cost: 200, range: 6.5, minRange: 1.5, interval: 3.2, dmg: 45, splash: 1.2, mult: [1, .5, .25, 0, 0], hp: 90, ground: true, desc: 'Pitkä kantama ja aluevaikutus. Ei ammu aivan lähelle.' },
+  atgm:     { name: 'Panssarintorjuntaohjus', nameEn: 'Anti-tank missile', descEn: 'Destroys tanks and IFVs. Also hits helicopters.', short: 'PST', cost: 250, range: 5, interval: 2.6, dmg: 140, mult: [.4, 1, 1, 0, .6], hp: 90, ground: true, air: true, desc: 'Tuhoaa panssarivaunuja ja BMP:itä. Osuu myös helikoptereihin.' },
+  aa:       { name: 'Ilmatorjunta', nameEn: 'Anti-aircraft gun', descEn: 'Shoots down drones. Weak against helicopters.', short: 'IT', cost: 180, range: 5, interval: 0.25, dmg: 9, mult: [0, 0, 0, 1, .5], hp: 80, air: true, desc: 'Ampuu lennokit alas. Helikoptereihin se tehoaa huonosti.' },
+  k9:       { name: 'K9 Moukari', nameEn: 'K9 Thunder', descEn: 'Self-propelled howitzer: very long range and wide blast. Reaches enemy artillery.', short: 'K9', cost: 320, range: 9, minRange: 2.5, interval: 4.5, dmg: 85, splash: 1.6, mult: [1, .7, .45, 0, 0], hp: 110, ground: true, locked: true, desc: 'Panssarihaupitsi: erittäin pitkä kantama ja laaja iskualue. Yltää vihollisen tykistöön.' },
+  nasams:   { name: 'NASAMS', nameEn: 'NASAMS', descEn: 'Surface-to-air missile system: long range, destroys helicopters and drones.', short: 'NAS', cost: 300, range: 7.5, interval: 2.4, dmg: 110, mult: [0, 0, 0, 1, 1], hp: 90, air: true, locked: true, desc: 'Ilmatorjuntaohjusjärjestelmä: pitkä kantama, tuhoaa helikopterit ja lennokit.' },
+  leo:      { name: 'Leopard 2A6', nameEn: 'Leopard 2A6', descEn: 'Mobile main battle tank. Select it and tap a tile to move.', short: 'LEO', cost: 360, mobile: true, range: 4.5, interval: 2.2, dmg: 170, mult: [.5, 1, .95, 0, .3], hp: 260, armor: .45, speed: 1.3, ground: true, air: true, locked: true, desc: 'Liikkuva panssarivaunu. Valitse se ja napauta ruutua siirtääksesi.' },
+  amv:      { name: 'Patria AMV', nameEn: 'Patria AMV', descEn: 'Fast armoured vehicle with an infantry squad. Move it where it is needed.', short: 'AMV', cost: 170, mobile: true, range: 3.3, interval: .2, dmg: 6, mult: [1, .35, .05, .5, .2], hp: 150, armor: .25, speed: 2.1, ground: true, air: true, locked: true, desc: 'Nopea panssariajoneuvo jalkaväkiryhmällä. Siirrä se sinne, missä tarvitaan.' },
+  obstacle: { name: 'Hammaskivet', nameEn: 'Tank traps', descEn: 'Stops vehicles, slows infantry. Can be placed on a road.', short: 'Este', cost: 30, passive: true, desc: 'Pysäyttää ajoneuvot, hidastaa jalkaväkeä. Voi asettaa tielle.' },
+  mine:     { name: 'Panssarimiinoite', nameEn: 'Anti-tank mines', descEn: 'Explodes under a vehicle (3 times). Does not block movement.', short: 'Miina', cost: 60, passive: true, charges: 3, dmg: 160, desc: 'Räjähtää ajoneuvon alla (3 kertaa). Ei estä kulkua.' },
 };
-const TOWERS = new Set(['mg', 'mortar', 'atgm', 'aa']);
+const dn = d => L(d.name, d.nameEn || d.name), dd = d => L(d.desc, d.descEn || d.desc);
+const TOWERS = new Set(['mg', 'mortar', 'atgm', 'aa', 'k9', 'nasams']);
+const MOBILE = new Set(['leo', 'amv']);
+const ARMOR_RED = 0;
 const EDEF = {
-  inf:   { name: 'Jalkaväki', hp: 60, speed: 1.0, armor: 0, cls: 'inf', reward: 8, leak: 1, atk: { range: 1.8, dmg: 2.5, interval: 2 } },
-  bmp:   { name: 'BMP', hp: 240, speed: 1.5, armor: 1, cls: 'veh', reward: 22, leak: 2, atk: { range: 3, dmg: 6, interval: 1.2 } },
-  tank:  { name: 'Panssarivaunu', hp: 650, speed: 0.9, armor: 2, cls: 'veh', reward: 55, leak: 4, atk: { range: 4, dmg: 30, interval: 3.5 } },
+  inf:   { name: 'Jalkaväki', hp: 60, speed: 1.0, armor: 0, cls: 'inf', reward: 10, leak: 1, atk: { range: 1.8, dmg: 1.5, interval: 2 } },
+  bmp:   { name: 'BMP', hp: 200, speed: 1.5, armor: 1, cls: 'veh', reward: 28, leak: 2, atk: { range: 3, dmg: 4, interval: 1.2 } },
+  tank:  { name: 'Panssarivaunu', hp: 650, speed: 0.9, armor: 2, cls: 'veh', reward: 55, leak: 4, atk: { range: 4, dmg: 22, interval: 3.5 } },
   drone: { name: 'Lennokki', hp: 28, speed: 2.6, armor: 3, cls: 'air', reward: 14, leak: 1, kamikaze: 40 },
+  heli:  { name: 'Taisteluhelikopteri', hp: 320, speed: 1.15, armor: 4, cls: 'air', heli: true, reward: 45, leak: 2, atk: { range: 3.4, dmg: 15, interval: 2.8 } },
+  ew:    { name: 'Häirintäasema', hp: 300, speed: .8, armor: 1, cls: 'veh', ew: true, reward: 40, leak: 2, atk: { range: 2.5, dmg: 4, interval: 1.5 } },
+  spec:  { name: 'Erikoisjoukot', hp: 80, speed: 1.0, armor: 0, cls: 'inf', reward: 15, leak: 1, atk: { range: 2, dmg: 5, interval: 1.5 } },
+  battery: { name: 'Tykistöpatteri', hp: 520, speed: 0, armor: 1, cls: 'veh', static: true, reward: 70, leak: 0 },
 };
 const FORT_HP = [1, 2, 3.5], FORT_RED = [0, .3, .5], FORT_COST = [90, 170];
-const FORT_NAME = ['Ei linnoitettu', 'Hiekkasäkit', 'Betonibunkkeri'];
+const FORT_NAME = [['Ei linnoitettu', 'None'], ['Hiekkasäkit', 'Sandbags'], ['Betonibunkkeri', 'Concrete bunker']];
 // maastokustannus [kesä, talvi][FIELD, FOREST, ROAD, SWAMP, LAKE, FELL, SEA]
 const COST = {
   inf: [[1.2, 1.6, 1, 2.5, INF, 2.2, INF], [1.2, 1.6, 1, 1.4, 1.2, 2.4, INF]],
@@ -68,7 +81,7 @@ const PAL_BASE = [
   [0xedf2f5, 0xd2dde2, 0x8d9297, 0xc6d1d4, 0xaed6ec, 0xf9fbfc, 0x3f6f9a],
 ];
 const BASEH = [.30, .32, .31, .26, .12, .62, .08];
-const TERRAIN_NAME = ['pelto', 'metsä', 'tie', 'suo', 'järvi', 'tunturi', 'meri'];
+const TERRAIN_NAME = [['pelto', 'field'], ['metsä', 'forest'], ['tie', 'road'], ['suo', 'swamp'], ['järvi', 'lake'], ['tunturi', 'fell'], ['meri', 'sea']];
 
 // ================= TILA =================
 let cfg = SECTORS[0], PAL = PAL_BASE, battleWaves = 10;
@@ -76,9 +89,18 @@ let screen = 'intro';
 let winter = false, money = 650, lives = 20, wave = 0, phase = 'build', speed = 1;
 let paused = false, gameOver = false, running = false, endless = false;
 let tool = null, selected = null, pendingTile = -1, barrageWarned = false, deerWarned = false, leaveArmed = 0;
+let units = [], cleared = new Set(), cond = 'clear', nextCond = 'clear', specDone = false;
 const structs = new Map();
 const rubble = new Map();
 let enemies = [], projectiles = [], effects = [], barrages = [], queue = [], barrageTimes = [], deer = [];
+const L = (fi, en) => (settings.lang === 'en' ? en : fi);
+const B = (fi, en) => ({ fi, en });             // kaksikielinen raporttirivi
+const rt = r => (r && typeof r === 'object' ? L(r.fi, r.en) : r);
+// --- asetukset
+const SET_KEY = 'salpa.asetukset';
+const settings = { gfx: matchMedia('(pointer: coarse)').matches ? 'med' : 'high', sound: true, lang: 'fi' };
+try { Object.assign(settings, JSON.parse(localStorage.getItem(SET_KEY)) || {}); } catch (e) { /* oletukset */ }
+function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (e) { /* ohitetaan */ } }
 let spawnTimer = 0, waveTime = 0, hpMult = 1, dmgMult = 1;
 let fields = { inf: null, veh: null };
 const terr = new Uint8Array(N);
@@ -96,17 +118,23 @@ function newCampaign() {
   threat.kaakko = 82;                                   // avaushyökkäys Kaakkois-Suomeen
   const others = SECTORS.filter(s => s.id !== 'kaakko');
   threat[others[(Math.random() * others.length) | 0].id] = 50 + Math.round(Math.random() * 15);
-  return { v: 2, week: 1, threat, resil: MAX_RESIL, wins: 0, losses: 0, held: {}, best: {}, report: ['Vihollinen keskittää joukkoja Vaalimaan suunnalle. Puolusta Kaakkois-Suomea!'], over: null, support: { f35: 0, himars: 0 } };
+  return {
+    v: 2, week: 1, threat, resil: MAX_RESIL, wins: 0, losses: 0, held: {}, best: {}, over: null,
+    report: [B('Vihollinen keskittää joukkoja Vaalimaan suunnalle. Puolusta Kaakkois-Suomea!', 'The enemy is massing troops near Vaalimaa. Defend South-East Finland!')],
+    support: { f35: 0, himars: 0 }, funds: 300, unlocked: {}, upg: { budget: 0, support: 0 }, reserve: 0, mobilizeCd: 0, forts: {}, battle: null,
+  };
 }
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.v === 2) progress = s; } catch (e) { /* ei tallennusta */ }
 if (!progress) progress = newCampaign();
+// vanhemman tallennuksen täydennys
+for (const [k, v] of Object.entries({ funds: 300, unlocked: {}, upg: { budget: 0, support: 0 }, reserve: 0, mobilizeCd: 0, forts: {}, battle: null, support: { f35: 0, himars: 0 } })) if (progress[k] === undefined) progress[k] = v;
 function saveProgress() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(progress)); } catch (e) { /* ohitetaan */ } }
 const threatOf = id => progress.threat[id] || 0;
 const levelOf = t => t >= RED ? 'red' : t >= YELLOW ? 'yellow' : 'calm';
 const LEVEL = {
-  red:    { col: '#e5383b', label: 'KIIREELLINEN', text: 'Suurhyökkäys käynnissä', badge: '!!' },
-  yellow: { col: '#ffc531', label: 'Uhka kasvaa', text: 'Vihollinen tunnustelee rajaa', badge: '!' },
-  calm:   { col: '#9aa7b2', label: 'Rauhallinen', text: 'Ei välitöntä uhkaa', badge: '' },
+  red:    { col: '#e5383b', label: 'KIIREELLINEN', labelEn: 'URGENT', text: 'Suurhyökkäys käynnissä', textEn: 'Major offensive under way', badge: '!!' },
+  yellow: { col: '#ffc531', label: 'Uhka kasvaa', labelEn: 'Threat rising', text: 'Vihollinen tunnustelee rajaa', textEn: 'Enemy probing the border', badge: '!' },
+  calm:   { col: '#9aa7b2', label: 'Rauhallinen', labelEn: 'Quiet', text: 'Ei välitöntä uhkaa', textEn: 'No immediate threat', badge: '' },
 };
 const wavesFor = (s, t) => t >= RED ? s.waves : 6;
 let battleResolved = false;
@@ -116,39 +144,56 @@ function resolveBattle(id, win) {
   battleResolved = true;
   const s = SECTORS.find(x => x.id === id);
   const rep = [];
+  const wasRed = threatOf(id) >= RED;
   if (win) {
     progress.wins++; progress.held[id] = (progress.held[id] || 0) + 1;
     progress.threat[id] = Math.round(Math.random() * 10);
-    rep.push(`✓ ${s.name}: hyökkäys torjuttu. Sektori rauhoittui.`);
+    const gain = (wasRed ? 300 : 180) + lives * 5;
+    progress.funds += gain;
+    rep.push(B(`✓ ${s.name}: hyökkäys torjuttu. Sektori rauhoittui. Määrärahat +${gain} M€.`, `✓ ${s.nameEn}: attack repelled. Funds +${gain} M€.`));
+    // linnoitukset säilyvät
+    progress.forts[id] = {
+      structs: [...structs.values()].map(x => ({ kind: x.kind, i: x.i, lvl: x.lvl, fort: x.fort, charges: x.charges })),
+      units: units.filter(u => !u.dead).map(u => ({ kind: u.kind, i: u.i })),
+      cleared: [...cleared],
+    };
   } else {
     progress.losses++; progress.resil--;
     progress.threat[id] = 85;
-    rep.push(`✗ ${s.name}: puolustus murtui (kestävyys −1). Vihollinen jatkaa painostusta.`);
+    progress.funds += 50;
+    progress.forts[id] = null;
+    rep.push(B(`✗ ${s.name}: puolustus murtui (kestävyys −1). Sektorin asemat menetettiin.`, `✗ ${s.nameEn || s.name}: defence broken (resilience −1). Positions lost.`));
   }
+  progress.battle = null;
+  tickWeek(id, rep);
+}
+// viikko kuluu: muiden sektoreiden uhka kasvaa, kiireellisistä rangaistus
+function tickWeek(id, rep) {
   for (const o of SECTORS) {
     if (o.id === id) continue;
     const before = threatOf(o.id);
     if (before >= RED) {
       progress.resil--;
-      rep.push(`⚠ ${o.name}: hyökkäykseen ei vastattu – vihollinen eteni (kestävyys −1).`);
+      rep.push(B(`⚠ ${o.name}: hyökkäykseen ei vastattu – vihollinen eteni (kestävyys −1).`, `⚠ ${o.nameEn}: attack left unanswered – the enemy advanced (resilience −1).`));
     }
     const inc = Math.round((5 + Math.random() * 12) * (AGG[o.id] || 1) * (1 + progress.week * .05));
     const after = Math.min(100, before + inc);
     progress.threat[o.id] = after;
     if (levelOf(before) !== levelOf(after)) {
-      if (levelOf(after) === 'red') rep.push(`🔴 ${o.name}: hyökkäys alkaa – KIIREELLINEN!`);
-      else if (levelOf(after) === 'yellow') rep.push(`🟡 ${o.name}: vihollisen toiminta lisääntyy.`);
+      if (levelOf(after) === 'red') rep.push(B(`🔴 ${o.name}: hyökkäys alkaa – KIIREELLINEN!`, `🔴 ${o.nameEn}: offensive starting – URGENT!`));
+      else if (levelOf(after) === 'yellow') rep.push(B(`🟡 ${o.name}: vihollisen toiminta lisääntyy.`, `🟡 ${o.nameEn}: enemy activity increasing.`));
     }
   }
   // aina vähintään yksi uhattu sektori
   if (!SECTORS.some(o => threatOf(o.id) >= YELLOW)) {
     const o = SECTORS.filter(x => x.id !== id).sort((a, b) => threatOf(b.id) - threatOf(a.id))[0];
-    progress.threat[o.id] = YELLOW + 5; rep.push(`🟡 ${o.name}: vihollisen toiminta lisääntyy.`);
+    progress.threat[o.id] = YELLOW + 5; rep.push(B(`🟡 ${o.name}: vihollisen toiminta lisääntyy.`, `🟡 ${o.nameEn}: enemy activity increasing.`));
   }
   progress.resil = Math.max(0, progress.resil);
   progress.week++;
-  if (progress.resil <= 0) { progress.over = 'lost'; rep.push('Valtakunnan puolustuskestävyys loppui.'); }
-  else if (progress.week > CAMPAIGN_WEEKS) { progress.over = 'won'; rep.push('Talvi on ohi – itäraja piti!'); }
+  if (progress.mobilizeCd > 0) progress.mobilizeCd--;
+  if (progress.resil <= 0) { progress.over = 'lost'; rep.push(B('Valtakunnan puolustuskestävyys loppui.', 'The nation\'s defensive resilience is exhausted.')); }
+  else if (progress.week > CAMPAIGN_WEEKS) { progress.over = 'won'; rep.push(B('Talvi on ohi – itäraja piti!', 'Winter is over – the eastern border held!')); }
   progress.report = rep;
   saveProgress();
 }
@@ -264,7 +309,7 @@ function pathOk(kind, i) {
     const fs = dijkstra(j => tileCost(cls, j, false, { i, kind })).dist;
     if (!spawns[cls].some(s => fs[s] < INF)) return false;
     const fc = winter ? dijkstra(j => tileCost(cls, j, true, { i, kind })).dist : fs;
-    for (const e of enemies) if (!e.dead && e.cls === cls && fc[e.cur] >= INF) return false;
+    for (const e of enemies) if (!e.dead && !e.d.static && e.cls === cls && fc[e.cur] >= INF) return false;
   }
   return true;
 }
@@ -294,7 +339,7 @@ function resetCamera() {
 }
 resetCamera();
 
-scene.add(new THREE.HemisphereLight(0xe4f0ff, 0x4a5a3a, 1.4));
+const hemi = new THREE.HemisphereLight(0xe4f0ff, 0x4a5a3a, 1.4); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
 sun.position.set(W / 2 + 10, 28, H / 2 - 10);
 sun.target.position.set(W / 2, 0, H / 2);
@@ -303,6 +348,46 @@ sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
 sun.shadow.bias = -0.0005;
 scene.add(sun, sun.target);
+function applyGfx() {
+  const lv = settings.gfx;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, lv === 'high' ? 2 : lv === 'med' ? 1.5 : 1));
+  renderer.shadowMap.enabled = lv !== 'low'; sun.castShadow = lv !== 'low';
+  const ms = lv === 'high' ? 2048 : 1024;
+  if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+  scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); });
+  renderer.setSize(innerWidth, innerHeight);
+}
+applyGfx();
+// --- sääolosuhteet
+const COND = {
+  clear: { name: 'Selkeä', en: 'Clear', icon: '☀️', range: 0 },
+  night: { name: 'Yö', en: 'Night', icon: '🌙', range: -.8, desc: 'kantamat −0,8', descEn: 'ranges −0.8' },
+  fog:   { name: 'Sumu', en: 'Fog', icon: '🌫️', range: -.7, noAir: true, desc: 'kantamat −0,7, ei lentotukea', descEn: 'ranges −0.7, no air support' },
+  storm: { name: 'Lumimyräkkä', en: 'Snowstorm', icon: '🌨️', range: -.7, noAir: true, desc: 'kantamat −0,7, ei lentotukea', descEn: 'ranges −0.7, no air support' },
+};
+const snowGeo = new THREE.BufferGeometry();
+{ const a = new Float32Array(1800 * 3); for (let k = 0; k < 1800; k++) { a[k * 3] = -4 + Math.random() * (W + 8); a[k * 3 + 1] = Math.random() * 9; a[k * 3 + 2] = -3 + Math.random() * (H + 6); } snowGeo.setAttribute('position', new THREE.BufferAttribute(a, 3)); }
+const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: .07, transparent: true, opacity: .85, depthWrite: false }));
+snow.visible = false; scene.add(snow);
+function pickCond(n) {
+  if (n <= 1) return 'clear';
+  const r = Math.random();
+  if (r < .45) return 'clear';
+  if (r < .7) return 'night';
+  if (r < .85) return 'fog';
+  return seasonOf(n) ? 'storm' : 'fog';
+}
+function setCondition(c) {
+  cond = c;
+  const sky = SKY[winter ? 1 : 0];
+  let bg = sky, fogN = 45, fogF = 90, hI = 1.4, sI = 2.2, hC = 0xe4f0ff, sC = 0xfff4e0;
+  if (c === 'night') { bg = 0x16213a; fogN = 30; fogF = 75; hI = .45; sI = .5; hC = 0x8fa6d8; sC = 0x9fb4ff; }
+  else if (c === 'fog') { bg = winter ? 0xd5dce0 : 0xb4bec4; fogN = 12; fogF = 44; hI = 1.2; sI = 1.1; }
+  else if (c === 'storm') { bg = 0xc9d2d8; fogN = 14; fogF = 48; hI = 1.1; sI = .9; }
+  scene.background.setHex(bg); scene.fog.color.setHex(bg); scene.fog.near = fogN; scene.fog.far = fogF;
+  hemi.intensity = hI; hemi.color.setHex(hC); sun.intensity = sI; sun.color.setHex(sC);
+  snow.visible = c === 'storm';
+}
 
 const M = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, flatShading: true, ...o });
 const MAT = {
@@ -311,6 +396,7 @@ const MAT = {
   enemy: M(0x34363a), enemy2: M(0x4a4c50), accent: M(0xff8a1f), inf: M(0x5b5848), rubble: M(0x3b3b3b),
   house: M(0xc9b08a), roof: M(0x7a3e2e), flatRoof: M(0x5b6066), street: M(0x55585c), houseB: M(0xdcd6c8), houseR: M(0x8e3b2c),
   deer: M(0x7a6a58), deerL: M(0xe8e1d4), antler: M(0xcdbf9f),
+  finG: M(0x5a6b45), finG2: M(0x4b5a3a), spec: M(0x3c4a3a), purple: M(0xb27ce0),
 };
 function mesh(geo, mat, x = 0, y = 0, z = 0, shadow = true) {
   const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = shadow; m.receiveShadow = true; return m;
@@ -528,8 +614,8 @@ function buildTown() {
     }
   }
   applyTownWinter();
-  const a = label('SUOMI'); a.position.set(BORDER - 3, 1.6, -1); world.add(a);
-  const b = label('VENÄJÄ'); b.position.set(BORDER + 3, 1.6, -1); world.add(b);
+  const a = label(L('SUOMI', 'FINLAND')); a.position.set(BORDER - 3, 1.6, -1); world.add(a);
+  const b = label(L('VENÄJÄ', 'RUSSIA')); b.position.set(BORDER + 3, 1.6, -1); world.add(b);
   const c = label(cfg.city.toUpperCase(), .9); c.position.set(-2.3, north ? 1.7 : 2.6, H / 2); world.add(c);
 }
 function applyTownWinter() {
@@ -564,7 +650,7 @@ function showRange(x, z, y, r, rMin) {
   ring.visible = r > 0; ring.position.set(x, y + .05, z); ring.scale.setScalar(r);
   ringIn.visible = !!rMin; if (rMin) { ringIn.position.set(x, y + .05, z); ringIn.scale.setScalar(rMin); }
 }
-const towerRange = (def, lvl, i) => def.range + .5 * (lvl - 1) + (terr[i] === FELL ? 1 : 0);
+const towerRange = (def, lvl, i) => Math.max(1.5, def.range + .5 * (lvl - 1) + (terr[i] === FELL ? 1 : 0) + (phase === 'wave' ? COND[cond].range : 0));
 
 // ================= RAKENNELMIEN MALLIT =================
 function makeStructMesh(kind) {
@@ -592,6 +678,36 @@ function makeStructMesh(kind) {
     radar.add(mesh(new THREE.CylinderGeometry(.02, .02, .2, 4), MAT.dark, 0, .1, 0));
     radar.add(mesh(new THREE.BoxGeometry(.04, .14, .3), MAT.white, 0, .24, 0));
     g.userData.radar = radar;
+  } else if (kind === 'k9') {
+    g.add(t); t.position.y = 0;
+    t.add(mesh(new THREE.BoxGeometry(.62, .16, .4), MAT.finG, 0, .14, 0));
+    for (const z of [-.18, .18]) t.add(mesh(new THREE.BoxGeometry(.64, .1, .08), MAT.dark, 0, .06, z));
+    t.add(mesh(new THREE.BoxGeometry(.32, .16, .32), MAT.finG2, -.06, .3, 0));
+    const b = mesh(new THREE.CylinderGeometry(.035, .04, .7, 6), MAT.dark, .3, .42, 0); b.rotation.z = -1.15; t.add(b);
+  } else if (kind === 'nasams') {
+    base(); g.add(t);
+    t.add(mesh(new THREE.BoxGeometry(.3, .08, .3), MAT.fin, 0, .04, 0));
+    const pod = new THREE.Group(); pod.position.set(0, .18, 0); pod.rotation.z = .6; t.add(pod);
+    pod.add(mesh(new THREE.BoxGeometry(.46, .16, .26), MAT.finG, 0, 0, 0));
+    for (const z of [-.06, .06]) for (const y of [-.04, .04]) pod.add(mesh(new THREE.CylinderGeometry(.025, .025, .02, 6).rotateZ(Math.PI / 2), MAT.dark, .235, y, z));
+    const radar = new THREE.Group(); radar.position.set(-.26, .12, .2); g.add(radar);
+    radar.add(mesh(new THREE.BoxGeometry(.04, .2, .16), MAT.white, 0, .1, 0));
+    g.userData.radar = radar;
+  } else if (kind === 'leo') {
+    g.add(mesh(new THREE.BoxGeometry(.66, .17, .4), MAT.finG, 0, .12, 0));
+    for (const z of [-.19, .19]) g.add(mesh(new THREE.BoxGeometry(.68, .11, .07), MAT.dark, 0, .06, z));
+    g.add(t); t.position.y = .22;
+    t.add(mesh(new THREE.BoxGeometry(.36, .13, .3), MAT.finG2, -.04, .06, 0));
+    t.add(mesh(new THREE.BoxGeometry(.08, .03, .12), MAT.blue, -.16, .135, 0));
+    const b = mesh(new THREE.CylinderGeometry(.03, .03, .6, 6), MAT.dark, .42, .07, 0); b.rotation.z = Math.PI / 2; t.add(b);
+  } else if (kind === 'amv') {
+    g.add(mesh(new THREE.BoxGeometry(.6, .18, .3), MAT.finG, 0, .17, 0));
+    g.add(mesh(new THREE.BoxGeometry(.16, .1, .28), MAT.finG2, .26, .14, 0));
+    for (const x of [-.21, -.07, .07, .21]) for (const z of [-.15, .15]) g.add(mesh(new THREE.CylinderGeometry(.06, .06, .05, 8).rotateX(Math.PI / 2), MAT.dark, x, .07, z));
+    g.add(t); t.position.y = .27;
+    t.add(mesh(new THREE.BoxGeometry(.16, .07, .14), MAT.finG2, 0, .03, 0));
+    t.add(mesh(new THREE.BoxGeometry(.06, .03, .1), MAT.blue, -.07, .075, 0));
+    const b = mesh(new THREE.CylinderGeometry(.015, .015, .26, 5), MAT.dark, .17, .04, 0); b.rotation.z = Math.PI / 2; t.add(b);
   } else if (kind === 'obstacle') {
     const c = new THREE.ConeGeometry(.15, .32, 4);
     for (const [x, z] of [[-.22, -.22], [.22, -.22], [-.22, .22], [.22, .22], [0, 0]]) g.add(mesh(c, MAT.stone, x, .16, z));
@@ -644,6 +760,39 @@ const proto = {};
   g.add(mesh(new THREE.BoxGeometry(.06, .025, .2), MAT.accent, -.15, 0, 0));
   g.add(mesh(new THREE.BoxGeometry(.06, .12, .02), MAT.enemy2, -.15, .05, 0));
   proto.drone = g;
+  // taisteluhelikopteri
+  g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(.42, .16, .16), MAT.enemy, 0, 0, 0));
+  g.add(mesh(new THREE.BoxGeometry(.12, .1, .12), MAT.enemy2, .22, -.01, 0));
+  g.add(mesh(new THREE.BoxGeometry(.5, .05, .05), MAT.enemy, -.4, .03, 0));
+  g.add(mesh(new THREE.BoxGeometry(.04, .14, .1), MAT.accent, -.64, .07, 0));
+  g.add(mesh(new THREE.BoxGeometry(.06, .02, .4), MAT.enemy2, .02, -.06, 0));
+  const rotor = new THREE.Group(); rotor.name = 'r'; rotor.position.y = .13; g.add(rotor);
+  rotor.add(mesh(new THREE.BoxGeometry(1.0, .01, .05), MAT.dark, 0, 0, 0, false));
+  rotor.add(mesh(new THREE.BoxGeometry(.05, .01, 1.0), MAT.dark, 0, 0, 0, false));
+  proto.heli = g;
+  // häirintäasema
+  g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(.5, .2, .3), MAT.enemy, 0, .16, 0));
+  for (const x of [-.16, .16]) for (const z of [-.15, .15]) g.add(mesh(new THREE.CylinderGeometry(.06, .06, .05, 8).rotateX(Math.PI / 2), MAT.dark, x, .06, z));
+  g.add(mesh(new THREE.CylinderGeometry(.015, .015, .5, 4), MAT.dark, -.1, .5, 0));
+  const dsh = mesh(new THREE.CylinderGeometry(.13, .05, .05, 8), MAT.purple, .1, .34, 0); dsh.rotation.z = .6; dsh.name = 'd'; g.add(dsh);
+  const ewRing = new THREE.Mesh(new THREE.RingGeometry(3.85, 4, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xb27ce0, transparent: true, opacity: .45, depthWrite: false, side: THREE.DoubleSide }));
+  ewRing.position.y = .06; ewRing.name = 'ring'; g.add(ewRing);
+  proto.ew = g;
+  // erikoisjoukot
+  g = new THREE.Group();
+  for (const [x, z] of [[0, 0], [-.12, .1], [-.12, -.1], [-.22, 0]]) { g.add(mesh(body, MAT.spec, x, .1, z)); g.add(mesh(head, MAT.accent, x, .24, z)); }
+  proto.spec = g;
+  // tykistöpatteri
+  g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(1.1, .03, .9), MAT.inf, 0, .02, 0, false));
+  for (const z of [-.22, .22]) {
+    g.add(mesh(new THREE.BoxGeometry(.32, .14, .2), MAT.enemy, .05, .1, z));
+    const b = mesh(new THREE.CylinderGeometry(.03, .035, .6, 6), MAT.dark, -.22, .26, z); b.rotation.z = 1.1; g.add(b);
+  }
+  g.add(mesh(new THREE.BoxGeometry(.18, .12, .5), MAT.accent, .38, .08, 0));
+  proto.battery = g;
   // poro
   g = new THREE.Group();
   g.add(mesh(new THREE.BoxGeometry(.34, .15, .14), MAT.deer, 0, .3, 0));
@@ -669,6 +818,7 @@ function boom(x, y, z, r, color = 0xffa040) {
   m.position.set(x, y, z); m.scale.setScalar(r * .2); world.add(m);
   effects.push({ obj: m, t: .45, T: .45, r, kind: 'boom' });
   if (r > .3) shockwaves.push({ x, z, r: r * 2.5 });
+  if (r >= .8) sfx('boomL'); else if (r >= .35) sfx('boomS');
 }
 function puff(p) {
   const m = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: 0xbfbfbf, transparent: true, opacity: .5, depthWrite: false }));
@@ -766,37 +916,49 @@ function deerBlocking(x, z) {
 
 // ================= RAKENTAMINEN =================
 function canPlace(kind, i) {
-  if (i < 0) return 'Kartan ulkopuolella';
-  if (ix(i) >= BORDER) return 'Rakentaa voi vain Suomen puolelle';
-  if (structs.has(i)) return 'Ruutu on jo käytössä';
-  if (terr[i] === LAKE) return 'Järveen ei voi rakentaa';
-  if (terr[i] === SEA) return 'Mereen ei voi rakentaa';
-  if (money < DEFS[kind].cost) return 'Rahat eivät riitä';
+  if (i < 0) return L('Kartan ulkopuolella', 'Outside the map');
+  if (ix(i) >= BORDER) return L('Rakentaa voi vain Suomen puolelle', 'You can only build on the Finnish side');
+  if (structs.has(i)) return L('Ruutu on jo käytössä', 'Tile already in use');
+  if (terr[i] === LAKE) return L('Järveen ei voi rakentaa', 'Cannot build on a lake');
+  if (terr[i] === SEA) return L('Mereen ei voi rakentaa', 'Cannot build on the sea');
+  if (money < DEFS[kind].cost) return L('Rahat eivät riitä', 'Not enough money');
+  if (DEFS[kind].mobile) {
+    if (!unitPassable(i)) return L('Ajoneuvo ei pääse tähän maastoon', 'The vehicle cannot enter this terrain');
+    if (units.some(u => !u.dead && u.i === i)) return L('Ruudussa on jo ajoneuvo', 'A vehicle is already here');
+    return null;
+  }
+  if (units.some(u => !u.dead && u.i === i)) return L('Ruudussa on oma ajoneuvo', 'Your vehicle is on this tile');
   if (kind !== 'mine') {
     for (const e of enemies) {
       if (e.dead || e.cls === 'air') continue;
-      if (e.cur === i || e.next === i || Math.hypot(e.x - ix(i) - .5, e.z - iz(i) - .5) < .8) return 'Vihollinen on ruudussa';
+      if (e.cur === i || e.next === i || Math.hypot(e.x - ix(i) - .5, e.z - iz(i) - .5) < .8) return L('Vihollinen on ruudussa', 'An enemy is on this tile');
     }
-    if (!pathOk(kind, i)) return 'Vihollisen reittiä ei saa sulkea kokonaan';
+    if (!pathOk(kind, i)) return L('Vihollisen reittiä ei saa sulkea kokonaan', 'You must not block the enemy route completely');
   }
   return null;
 }
-function build(kind, i) {
+function clearTile(i) {
+  if (terr[i] !== FOREST) return;
+  terr[i] = FIELD; cleared.add(i); clearTrees(i); refreshTile(i); tiles.instanceMatrix.needsUpdate = true; tiles.instanceColor.needsUpdate = true;
+}
+function build(kind, i, free) {
   const def = DEFS[kind];
-  if (terr[i] === FOREST) { terr[i] = FIELD; clearTrees(i); refreshTile(i); tiles.instanceMatrix.needsUpdate = true; tiles.instanceColor.needsUpdate = true; }
+  if (def.mobile) return spawnUnit(kind, i, free);
+  clearTile(i);
   if (rubble.has(i)) { world.remove(rubble.get(i)); rubble.delete(i); }
   const s = { kind, def, i, x: ix(i) + .5, z: iz(i) + .5, lvl: 1, fort: 0, cd: 0, dead: false, charges: def.charges || 0, spent: def.cost };
   s.maxHp = def.hp || 0; s.hp = s.maxHp;
   s.group = makeStructMesh(kind); s.group.position.set(s.x, tileTop(i), s.z); world.add(s.group);
   if (def.hp) { s.bar = makeBar(.7, BAR_T); s.bar.root.position.y = 1; s.bar.root.visible = false; s.group.add(s.bar.root); }
   structs.set(i, s);
-  money -= def.cost;
+  if (!free) { money -= def.cost; sfx('build'); }
   for (const d of deer) if (Math.floor(d.x) === ix(i) && Math.floor(d.z) === iz(i) && TOWERS.has(kind)) { d.state = 'flee'; d.t = 1; d.fx = d.x - s.x || .5; d.fz = d.z - s.z || .5; d.x += d.fx * .3; d.z += d.fz * .3; }
   if (!def.passive || kind === 'obstacle') recomputeFields();
   return s;
 }
 function calcMaxHp(s) { return s.def.hp * FORT_HP[s.fort] * (1 + .2 * (s.lvl - 1)); }
 function hurtStruct(s, dmg) {
+  if (s.mobile) return hurtUnit(s, dmg);
   if (s.dead || !s.def.hp) return;
   s.hp -= dmg * (1 - FORT_RED[s.fort]);
   if (s.hp <= 0) { destroyStruct(s, true); return; }
@@ -804,11 +966,12 @@ function hurtStruct(s, dmg) {
   if (selected === s) refreshPanel();
 }
 function destroyStruct(s, byEnemy) {
+  if (s.mobile) return removeUnit(s, byEnemy);
   if (s.dead) return;
   s.dead = true; world.remove(s.group); structs.delete(s.i);
   if (byEnemy) {
     boom(s.x, tileTop(s.i) + .3, s.z, .8);
-    toast(`${s.def.name} tuhoutui!`, 'warn');
+    toast(L(`${s.def.name} tuhoutui!`, `${s.def.nameEn} destroyed!`), 'warn');
     if (TOWERS.has(s.kind)) {
       const r = new THREE.Group(); r.position.set(s.x, tileTop(s.i), s.z);
       for (let k = 0; k < 4; k++) { const b = mesh(new THREE.BoxGeometry(.18, .08, .14), MAT.rubble, (Math.random() - .5) * .5, .04, (Math.random() - .5) * .5); b.rotation.y = Math.random() * 3; r.add(b); }
@@ -819,16 +982,96 @@ function destroyStruct(s, byEnemy) {
   if (s.kind !== 'mine') recomputeFields();
 }
 
+// ================= OMAT AJONEUVOT (Leopard, AMV) =================
+function unitPassable(i) {
+  if (i < 0 || ix(i) >= BORDER) return false;
+  const st = structs.get(i); if (st && TOWERS.has(st.kind)) return false;
+  return COST.veh[winter ? 1 : 0][terr[i]] < INF;
+}
+function spawnUnit(kind, i, free) {
+  const def = DEFS[kind];
+  const u = { kind, def, mobile: true, i, x: ix(i) + .5, z: iz(i) + .5, lvl: 1, fort: 0, cd: 0, dead: false, path: [], rot: 0, spent: def.cost, hp: def.hp, maxHp: def.hp };
+  u.group = makeStructMesh(kind); u.group.position.set(u.x, tileTop(i), u.z); world.add(u.group);
+  u.bar = makeBar(.6, BAR_T); u.bar.root.position.y = .75; u.bar.root.visible = false; u.group.add(u.bar.root);
+  units.push(u);
+  if (!free) { money -= def.cost; sfx('build'); }
+  return u;
+}
+function hurtUnit(u, dmg) {
+  if (u.dead) return;
+  u.hp -= dmg * (1 - (u.def.armor || 0));
+  if (u.hp <= 0) { removeUnit(u, true); return; }
+  u.bar.root.visible = true; u.bar.set(u.hp / u.maxHp);
+  if (selected === u) refreshPanel();
+}
+function removeUnit(u, byEnemy) {
+  if (u.dead) return;
+  u.dead = true; world.remove(u.group);
+  units = units.filter(x => x !== u);
+  if (byEnemy) { boom(u.x, tileTop(u.i) + .3, u.z, .9); toast(L(`${u.def.name} tuhoutui!`, `${u.def.nameEn} destroyed!`), 'warn'); }
+  if (selected === u) select(null);
+}
+function unitPath(from, to) {
+  if (!unitPassable(to)) return null;
+  const dist = new Float64Array(N).fill(INF), prev = new Int32Array(N).fill(-1);
+  const open = [from]; dist[from] = 0;
+  while (open.length) {
+    let bi = 0; for (let k = 1; k < open.length; k++) if (dist[open[k]] < dist[open[bi]]) bi = k;
+    const c = open.splice(bi, 1)[0]; if (c === to) break;
+    const x = ix(c), z = iz(c);
+    for (const [dx, dz] of DIRS) {
+      const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+      const j = idx(nx, nz); if (!unitPassable(j)) continue;
+      const diag = dx && dz; if (diag && (!unitPassable(idx(x + dx, z)) || !unitPassable(idx(x, z + dz)))) continue;
+      const nd = dist[c] + COST.veh[winter ? 1 : 0][terr[j]] * (diag ? 1.414 : 1);
+      if (nd < dist[j]) { if (dist[j] >= INF) open.push(j); dist[j] = nd; prev[j] = c; }
+    }
+  }
+  if (dist[to] >= INF) return null;
+  const path = []; for (let c = to; c !== from; c = prev[c]) path.unshift(c);
+  return path;
+}
+const moveMarker = new THREE.Mesh(new THREE.RingGeometry(.3, .4, 4).rotateX(-Math.PI / 2).rotateY(Math.PI / 4), new THREE.MeshBasicMaterial({ color: 0x5ab4ff, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide }));
+moveMarker.visible = false; scene.add(moveMarker);
+function orderMove(u, i) {
+  const p = unitPath(u.i, i);
+  if (!p) { toast(L('Ajoneuvo ei pääse sinne.', 'The vehicle cannot get there.'), 'warn', 1800); sfx('deny'); return; }
+  u.path = p; sfx('ui');
+  moveMarker.visible = true; moveMarker.position.set(ix(i) + .5, tileTop(i) + .06, iz(i) + .5); moveMarker.userData.t = 1.5;
+}
+function updateUnits(dt) {
+  for (const u of units) {
+    if (u.dead) continue;
+    if (u.path.length) {
+      const n = u.path[0];
+      if (!unitPassable(n)) { u.path = []; }
+      else {
+        const tx = ix(n) + .5, tz = iz(n) + .5, dx = tx - u.x, dz = tz - u.z, d = Math.hypot(dx, dz);
+        const st = u.def.speed / Math.min(COST.veh[winter ? 1 : 0][terr[u.i]], 4) * dt;
+        if (d <= st) { u.x = tx; u.z = tz; u.i = n; u.path.shift(); clearTile(n); }
+        else { u.x += dx / d * st; u.z += dz / d * st; u.rot = lerpAngle(u.rot, -Math.atan2(dz, dx), dt * 6); }
+      }
+    }
+    u.group.position.set(u.x, tileTop(u.i), u.z);
+    u.group.rotation.y = u.rot;
+    if (selected === u && !u.path.length) showRange(u.x, u.z, tileTop(u.i), towerRange(u.def, 1, u.i));
+  }
+  if (moveMarker.visible) { moveMarker.userData.t -= dt; moveMarker.material.opacity = Math.max(0, moveMarker.userData.t / 1.5); if (moveMarker.userData.t <= 0) moveMarker.visible = false; }
+}
+
 // ================= VIHOLLISET =================
-function spawnEnemy(type) {
+function spawnEnemy(type, atTile) {
   const d = EDEF[type];
   const e = {
     type, d, cls: d.cls, armor: d.armor, hp: d.hp * hpMult, maxHp: d.hp * hpMult,
-    speed: d.speed * (.92 + Math.random() * .16), dead: false, atkCd: Math.random() * 1.5,
+    speed: d.speed * (.92 + Math.random() * .16), dead: false, atkCd: Math.random() * 1.5, hover: 0,
     ox: (Math.random() - .5) * .3, oz: (Math.random() - .5) * .3, rot: Math.PI, tgt: null,
   };
   if (e.cls === 'air') {
-    e.x = W + .5; e.z = 1 + Math.random() * (H - 2); e.y = 1.8; e.ox = e.oz = 0;
+    e.x = W + .5; e.z = 1 + Math.random() * (H - 2); e.y = d.heli ? 1.5 : 1.8; e.ox = e.oz = 0;
+  } else if (atTile !== undefined) {
+    e.cur = atTile; e.next = null; e.x = ix(atTile) + .5; e.z = iz(atTile) + .5; e.y = tileTop(atTile);
+    if (d.static) { e.ox = e.oz = 0; e.rot = 0; }
   } else {
     const f = fields[e.cls];
     let list = spawns[e.cls].filter(i => f.dist[i] < INF); if (!list.length) list = spawns[e.cls];
@@ -837,19 +1080,25 @@ function spawnEnemy(type) {
     e.cur = s; e.next = s; e.x = W + .3; e.z = iz(s) + .5; e.y = tileTop(s);
   }
   e.mesh = proto[type].clone(); e.turret = e.mesh.getObjectByName('t');
-  e.bar = makeBar(type === 'tank' ? .6 : .45, BAR_E); e.bar.root.position.y = type === 'drone' ? .3 : .6; e.bar.root.visible = false;
+  e.bar = makeBar(type === 'tank' || d.static ? .6 : .45, BAR_E); e.bar.root.position.y = type === 'drone' ? .3 : .6; e.bar.root.visible = !!d.static;
+  if (d.static) e.bar.set(1);
+  e.rotor = e.mesh.getObjectByName('r'); e.ring = e.mesh.getObjectByName('ring');
+  if (d.heli) sfx('heli');
   e.mesh.add(e.bar.root);
   world.add(e.mesh); enemies.push(e);
 }
 function hurt(e, dmg, mult) {
   if (e.dead) return; const m = mult[e.armor]; if (!m) return;
   e.hp -= dmg * m;
-  if (e.hp <= 0) { kill(e); money += e.d.reward; boom(e.x, e.y + .2, e.z, e.type === 'tank' ? .7 : .4); }
+  if (e.hp <= 0) {
+    kill(e); money += e.d.reward; boom(e.x, e.y + .2, e.z, e.type === 'tank' || e.d.static || e.d.heli ? .8 : .4);
+    if (e.d.static) toast(L('Vihollisen tykistöpatteri tuhottu – tykistötuli lakkaa!', 'Enemy artillery battery destroyed – barrages stop!'), 'ok');
+  }
   else { e.bar.root.visible = true; e.bar.set(e.hp / e.maxHp); }
 }
 function kill(e) { e.dead = true; world.remove(e.mesh); }
 function leak(e) {
-  kill(e); lives = Math.max(0, lives - e.d.leak);
+  kill(e); lives = Math.max(0, lives - e.d.leak); sfx('leak');
   const fl = $('flash'); fl.classList.add('on'); setTimeout(() => fl.classList.remove('on'), 60);
   if (lives <= 0) endGame(false);
 }
@@ -859,10 +1108,39 @@ function nearestTower(x, z, range) {
     if (s.dead || !TOWERS.has(s.kind)) continue;
     const d = Math.hypot(s.x - x, s.z - z); if (d <= bd) { bd = d; best = s; }
   }
+  for (const u of units) {
+    if (u.dead) continue;
+    const d = Math.hypot(u.x - x, u.z - z); if (d <= bd) { bd = d; best = u; }
+  }
   return best;
 }
 function updateEnemy(e, dt) {
   const d = e.d;
+  if (d.static) { e.mesh.position.set(e.x, e.y, e.z); return; }
+  if (d.heli) {
+    if (e.rotor) e.rotor.rotation.y += dt * 25;
+    const tg = nearestTower(e.x, e.z, d.atk.range);
+    if (tg) {
+      e.rot = lerpAngle(e.rot, -Math.atan2(tg.z - e.z, tg.x - e.x), dt * 4);
+      e.atkCd -= dt;
+      if (e.atkCd <= 0) {
+        e.atkCd = d.atk.interval;
+        const to = V(tg.x, tileTop(tg.i) + .3, tg.z);
+        tracer(V(e.x, e.y, e.z), to, 0xffb36b, .15); boom(to.x, to.y, to.z, .35); sfx('enemyFire');
+        hurtStruct(tg, d.atk.dmg * dmgMult);
+      }
+    } else {
+      const tz = e.hz ?? (e.hz = 1 + Math.random() * (H - 2));
+      const dx = -1 - e.x, dz = tz - e.z, dist = Math.hypot(dx, dz);
+      e.x += dx / dist * e.speed * dt; e.z += dz / dist * e.speed * dt;
+      e.rot = lerpAngle(e.rot, -Math.atan2(dz, dx), dt * 3);
+      if (e.x < -.6) { leak(e); return; }
+    }
+    e.y = 1.5 + Math.sin(performance.now() * .002 + e.oz * 9) * .06;
+    e.mesh.position.set(e.x, e.y, e.z); e.mesh.rotation.y = e.rot; e.mesh.rotation.z = tg ? 0 : .12;
+    return;
+  }
+  if (e.ring) e.ring.material.opacity = .25 + .2 * Math.abs(Math.sin(performance.now() * .003));
   if (e.cls === 'air') {
     if (!e.tgt || e.tgt.dead) e.tgt = nearestTower(e.x, e.z, INF);
     const tx = e.tgt ? e.tgt.x : -.8, tz = e.tgt ? e.tgt.z : e.z;
@@ -908,6 +1186,7 @@ function updateEnemy(e, dt) {
         const from = new THREE.Vector3(e.x, e.y + .3, e.z), to = new THREE.Vector3(s.x, tileTop(s.i) + .3, s.z);
         tracer(from, to, e.type === 'tank' ? 0xffb36b : 0xffe2b8, e.type === 'tank' ? .12 : .06);
         if (e.type === 'tank') boom(to.x, to.y, to.z, .35);
+        sfx(e.type === 'tank' ? 'tankFire' : 'enemyFire');
         if (e.turret) e.turret.rotation.y = -Math.atan2(s.z - e.z, s.x - e.x) - e.rot;
         hurtStruct(s, d.atk.dmg * dmgMult);
       } else e.atkCd = .3;
@@ -920,7 +1199,7 @@ function enterTile(e) {
   const s = structs.get(e.cur);
   if (s && s.kind === 'mine' && e.cls === 'veh') {
     boom(e.x, e.y + .1, e.z, .9);
-    hurt(e, DEFS.mine.dmg, [0, 1, 1, 0]);
+    hurt(e, DEFS.mine.dmg, [0, 1, 1, 0, 0]);
     s.charges--;
     if (s.charges <= 0) destroyStruct(s, false); else if (selected === s) refreshPanel();
   }
@@ -929,10 +1208,13 @@ function enterTile(e) {
 // ================= TORNIT =================
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 function updateTowers(dt) {
-  for (const s of structs.values()) {
-    if (!TOWERS.has(s.kind)) continue;
-    const d = s.def, L = s.lvl;
-    const range = towerRange(d, L, s.i), dmg = d.dmg * (1 + .45 * (L - 1)), interval = d.interval * (1 - .1 * (L - 1));
+  const ews = enemies.filter(e => !e.dead && e.d.ew);
+  for (const s of [...structs.values(), ...units]) {
+    if (!TOWERS.has(s.kind) && !s.mobile) continue;
+    if (s.dead) continue;
+    const d = s.def, Lv = s.lvl;
+    const jam = ews.some(e => Math.hypot(e.x - s.x, e.z - s.z) < 4);
+    const range = towerRange(d, Lv, s.i) * (jam ? .85 : 1), dmg = d.dmg * (1 + .45 * (Lv - 1)), interval = d.interval * (1 - .1 * (Lv - 1)) * (jam ? 1.7 : 1);
     if (s.group.userData.radar) s.group.userData.radar.rotation.y += dt * 2.5;
     s.cd -= dt;
     let tgt = null, tp = INF;
@@ -941,7 +1223,7 @@ function updateTowers(dt) {
       if (air && !d.air) continue; if (!air && !d.ground) continue; if (!d.mult[e.armor]) continue;
       const dist = Math.hypot(e.x - s.x, e.z - s.z);
       if (dist > range || (d.minRange && dist < d.minRange)) continue;
-      const p = air ? e.x * 1.2 : fields[e.cls].dist[e.cur];
+      const p = e.d.static ? 50 : air ? e.x * 1.2 : fields[e.cls].dist[e.cur];
       if (p < tp) { tp = p; tgt = e; }
     }
     if (!tgt) continue;
@@ -951,17 +1233,22 @@ function updateTowers(dt) {
     s.cd = interval;
     const top = tileTop(s.i), muzzle = V(s.x, top + .38, s.z);
     const tpos = V(tgt.x + tgt.ox, tgt.y + (tgt.cls === 'air' ? 0 : .15), tgt.z + tgt.oz);
-    if (s.kind === 'mg' || s.kind === 'aa') {
+    if (s.mobile) t.rotation.y = lerpAngle(t.rotation.y, -Math.atan2(tgt.z - s.z, tgt.x - s.x) - s.rot, 1);
+    if (s.kind === 'mg' || s.kind === 'aa' || s.kind === 'amv') {
       tracer(muzzle, tpos, s.kind === 'aa' ? 0xbfe6ff : 0xfff1a8);
-      hurt(tgt, dmg, d.mult);
-    } else if (s.kind === 'mortar') {
+      hurt(tgt, dmg, d.mult); sfx(s.kind);
+    } else if (s.kind === 'leo') {
+      tracer(muzzle, tpos, 0xffd28a, .1); boom(tpos.x, tpos.y, tpos.z, .45, 0xffc060); boom(muzzle.x, muzzle.y, muzzle.z, .2, 0xfff1a8);
+      hurt(tgt, dmg, d.mult); sfx('tankgun');
+    } else if (s.kind === 'mortar' || s.kind === 'k9') {
       const m = mesh(new THREE.SphereGeometry(.06, 5, 4), MAT.dark, muzzle.x, muzzle.y, muzzle.z, false); world.add(m);
       const dist = Math.hypot(tpos.x - s.x, tpos.z - s.z);
       projectiles.push({ kind: 'shell', mesh: m, from: muzzle, to: V(tgt.x, tgt.y, tgt.z), t: 0, T: 1 + dist * .08, h: 1.5 + dist * .15, dmg, splash: d.splash, mult: d.mult });
-      boom(muzzle.x, muzzle.y + .1, muzzle.z, .2, 0xfff1a8);
-    } else if (s.kind === 'atgm') {
+      boom(muzzle.x, muzzle.y + .1, muzzle.z, .2, 0xfff1a8); sfx(s.kind === 'k9' ? 'k9' : 'mortar');
+    } else if (s.kind === 'atgm' || s.kind === 'nasams') {
       const m = mesh(new THREE.CylinderGeometry(.025, .025, .18, 5).rotateZ(Math.PI / 2), MAT.white, muzzle.x, muzzle.y, muzzle.z, false); world.add(m);
-      projectiles.push({ kind: 'missile', mesh: m, pos: muzzle.clone(), target: tgt, last: tpos, dmg, mult: d.mult, puffT: 0 });
+      projectiles.push({ kind: 'missile', mesh: m, pos: muzzle.clone(), target: tgt, last: tpos, dmg, mult: d.mult, puffT: 0, speed: s.kind === 'nasams' ? 10 : 7 });
+      sfx(s.kind === 'nasams' ? 'nasams' : 'missile');
     }
   }
 }
@@ -980,7 +1267,7 @@ function updateProjectiles(dt) {
       }
     } else {
       if (!p.target.dead) p.last.set(p.target.x + p.target.ox, p.target.y + .15, p.target.z + p.target.oz);
-      const dir = p.last.clone().sub(p.pos); const dist = dir.length(); const st = 7 * dt;
+      const dir = p.last.clone().sub(p.pos); const dist = dir.length(); const st = (p.speed || 7) * dt;
       p.pos.addScaledVector(dir.normalize(), Math.min(st, dist));
       p.mesh.position.copy(p.pos); p.mesh.rotation.y = -Math.atan2(dir.z, dir.x);
       p.puffT -= dt; if (p.puffT <= 0) { puff(p.pos); p.puffT = .04; }
@@ -997,14 +1284,15 @@ function updateProjectiles(dt) {
 // ================= TYKISTÖ =================
 const barrageGeo = new THREE.RingGeometry(1.0, 1.15, 32).rotateX(-Math.PI / 2);
 function triggerBarrage() {
+  if (!enemies.some(e => !e.dead && e.d.static)) return;
   const towers = [...structs.values()].filter(s => TOWERS.has(s.kind));
   if (!towers.length) return;
   const s = towers[(Math.random() * towers.length) | 0];
   const x = s.x + (Math.random() - .5) * 1.2, z = s.z + (Math.random() - .5) * 1.2;
   const r = new THREE.Mesh(barrageGeo, new THREE.MeshBasicMaterial({ color: 0xff8a1f, transparent: true, opacity: .8, depthWrite: false, side: THREE.DoubleSide }));
   r.position.set(x, tileTop(s.i) + .08, z); r.scale.setScalar(1.3); world.add(r);
-  barrages.push({ x, z, t: 2.2, ring: r });
-  if (!barrageWarned) { barrageWarned = true; toast('Vihollisen tykistö ampuu asemiasi! Linnoita ne.', 'warn'); }
+  barrages.push({ x, z, t: 2.2, ring: r }); sfx('whistle');
+  if (!barrageWarned) { barrageWarned = true; toast(L('Vihollisen tykistö ampuu asemiasi! Linnoita ne.', 'Enemy artillery is shelling your positions! Fortify them.'), 'warn'); }
 }
 function updateBarrages(dt) {
   for (const b of barrages) {
@@ -1023,37 +1311,55 @@ const seasonOf = n => cfg.winter.includes(n);
 function waveComp(n) {
   const m = cfg.mix;
   return {
-    inf: Math.round((5 + n * 2.2) * m.inf),
-    bmp: n >= 2 ? Math.round(n * .9 * m.bmp) : 0,
-    tank: n >= 4 ? Math.round((n - 2) * .6 * m.tank) : 0,
-    drone: n >= 3 ? Math.round((n - 1) * .8 * m.drone) : 0,
+    inf: Math.round((4 + n * 2) * m.inf),
+    bmp: n >= 3 ? Math.round((n - 1) * .8 * m.bmp) : 0,
+    tank: n >= 5 ? Math.round((n - 4) * .7 * m.tank) : 0,
+    drone: n >= 4 ? Math.round((n - 2) * .7 * m.drone) : 0,
+    heli: n >= 6 ? Math.round((n - 5) * .5 * (m.heli || 1)) : 0,
+    ew: n >= 7 ? Math.max(0, Math.floor((n - 4) / 3)) : 0,
   };
 }
 function startWave() {
   if (phase !== 'build' || gameOver) return;
-  wave++; phase = 'wave'; waveTime = 0; spawnTimer = 0;
-  hpMult = 1 + .14 * (wave - 1); dmgMult = 1 + .06 * (wave - 1);
+  wave++; phase = 'wave'; waveTime = 0; spawnTimer = 0; specDone = wave < 5;
+  hpMult = (1 + .12 * (wave - 1)) * (1 + (progress.week - 1) * .04); dmgMult = 1 + .06 * (wave - 1);
   const c = waveComp(wave), items = [];
-  const W8 = { inf: 0, bmp: .35, tank: .6, drone: Math.random() };
+  const W8 = { inf: 0, bmp: .35, tank: .6, drone: Math.random(), heli: .5, ew: .45 };
   for (const [t, n] of Object.entries(c)) for (let k = 0; k < n; k++) items.push({ t, key: Math.random() + (t === 'drone' ? Math.random() : W8[t]) });
   items.sort((a, b) => a.key - b.key); queue = items.map(i => i.t);
   if (!spawns.veh.length) queue = queue.filter(t => EDEF[t].cls !== 'veh');
   barrageTimes = [];
-  if (wave >= 5) for (let k = 0; k < Math.floor((wave - 3) / 2); k++) barrageTimes.push(3 + Math.random() * 20);
+  if (wave >= 6) for (let k = 0; k < Math.floor((wave - 4) / 2); k++) barrageTimes.push(3 + Math.random() * 20);
   barrageTimes.sort((a, b) => a - b);
+  if (barrageTimes.length) {
+    // vihollisen tykistöpatteri Venäjän puolella
+    const opts = []; for (let z = 1; z < H - 1; z++) for (let x = BORDER + 2; x < W - 1; x++) { const i = idx(x, z); if (terr[i] !== LAKE && terr[i] !== SEA && terr[i] !== ROAD) opts.push(i); }
+    if (opts.length) {
+      const bi = opts[(Math.random() * opts.length) | 0]; spawnEnemy('battery', bi);
+      toast(L('Vihollisen tykistöpatteri havaittu rajan takana! Tuhoa se kranaatinheittimellä, K9:llä tai HIMARSilla.', 'Enemy artillery battery spotted across the border! Destroy it with mortars, K9 or HIMARS.'), 'warn', 5000);
+    }
+  }
+  setCondition(cond = nextCond);
+  if (cond !== 'clear') toast(`${COND[cond].icon} ${L(COND[cond].name, COND[cond].en)}: ${L(COND[cond].desc, COND[cond].descEn)}`, 'info', 3500);
+  sfx('wave');
   preview.visible = false;
   select(null);
   updateHUD(true);
 }
 function endWave() {
   phase = 'build';
-  const bonus = 80 + 15 * wave; money += bonus;
+  for (const e of enemies) if (e.d.static && !e.dead) kill(e);
+  setCondition('clear');
+  nextCond = pickCond(wave + 1);
+  const bonus = 120 + 25 * wave; money += bonus;
   progress.best[cfg.id] = Math.max(progress.best[cfg.id] || 0, wave); saveProgress();
-  toast(`Aalto ${wave} torjuttu! +${bonus} €`, 'ok');
+  toast(L(`Aalto ${wave} torjuttu! +${bonus} €`, `Wave ${wave} repelled! +${bonus} €`), 'ok');
   if (wave === battleWaves && !endless) { endGame(true); }
   const w = seasonOf(wave + 1);
   if (w !== winter) setWinter(w, true);
+  if (nextCond === 'storm' && !seasonOf(wave + 1)) nextCond = 'fog';
   preview.visible = true; updateHUD(true);
+  saveBattle();
 }
 function setWinter(w, announce) {
   winter = w;
@@ -1061,18 +1367,19 @@ function setWinter(w, announce) {
   for (const s of structs.values()) s.group.position.y = tileTop(s.i);
   for (const [ri, r] of rubble) r.position.y = tileTop(ri);
   applyTownWinter();
-  scene.background.setHex(SKY[w ? 1 : 0]); scene.fog.color.setHex(SKY[w ? 1 : 0]);
+  setCondition(phase === 'wave' ? cond : 'clear');
   recomputeFields();
-  if (announce) toast(w ? '❄️ Talvi saapui – järvet ja suot jäätyivät. Panssarit pääsevät jäitä pitkin!' : '☀️ Sulan maan aika – jäät sulivat, järvet ja suot ovat taas esteitä.', 'info', 5000);
+  if (announce) toast(w ? L('❄️ Talvi saapui – järvet ja suot jäätyivät. Panssarit pääsevät jäitä pitkin!', '❄️ Winter has come – lakes and swamps froze. Tanks can now cross the ice!') : L('☀️ Sulan maan aika – jäät sulivat, järvet ja suot ovat taas esteitä.', '☀️ The thaw – the ice melted, lakes and swamps are obstacles again.'), 'info', 5000);
 }
 function endGame(win) {
   gameOver = true; const o = $('overlay'); o.hidden = false;
   const first = !battleResolved;
+  if (first) sfx(win ? 'victory' : 'defeat');
   resolveBattle(cfg.id, win);
-  const rep = first ? `<ul class="report">${progress.report.map(r => `<li>${r}</li>`).join('')}</ul>` : '';
+  const rep = first ? `<ul class="report">${progress.report.map(r => `<li>${rt(r)}</li>`).join('')}</ul>` : '';
   o.querySelector('.box').innerHTML = win
-    ? `<h2>🇫🇮 ${cfg.name} pitää!</h2><p>Torjuit kaikki ${battleWaves} aaltoa. ${cfg.city} on turvassa. Puolustuskykyä jäljellä ${lives}/20.</p><h3>Tilannekatsaus</h3>${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 Takaisin kartalle</button>${first ? '<button id="contBtn">Jatka loputtomasti</button>' : ''}</div>`
-    : `<h2>Puolustus murtui</h2><p>Kestit ${Math.max(0, wave - 1)} aaltoa. Vihollinen pääsi ${cfg.cityIn}.</p><h3>Tilannekatsaus</h3>${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 Takaisin kartalle</button></div>`;
+    ? L(`<h2>🇫🇮 ${cfg.name} pitää!</h2><p>Torjuit kaikki ${battleWaves} aaltoa. ${cfg.city} on turvassa. Puolustuskykyä jäljellä ${lives}/20.</p><h3>Tilannekatsaus</h3>`, `<h2>🇫🇮 ${cfg.nameEn} holds!</h2><p>You repelled all ${battleWaves} waves. ${cfg.city} is safe. Defence ${lives}/20 left.</p><h3>Situation report</h3>`) + `${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 ${L('Takaisin kartalle', 'Back to map')}</button>${first ? `<button id="contBtn">${L('Jatka loputtomasti', 'Continue endlessly')}</button>` : ''}</div>`
+    : L(`<h2>Puolustus murtui</h2><p>Kestit ${Math.max(0, wave - 1)} aaltoa. Vihollinen pääsi ${cfg.cityIn}.</p><h3>Tilannekatsaus</h3>`, `<h2>Defence broken</h2><p>You held ${Math.max(0, wave - 1)} waves. The enemy reached ${cfg.city}.</p><h3>Situation report</h3>`) + `${rep}<div class="row2"><button class="primary" id="mapBtn2">🗺 ${L('Takaisin kartalle', 'Back to map')}</button></div>`;
   $('mapBtn2').onclick = () => { o.hidden = true; showMap(); };
   if (win && first) $('contBtn').onclick = () => { endless = true; gameOver = false; o.hidden = true; };
 }
@@ -1105,34 +1412,75 @@ function updatePreview() {
 }
 
 // ================= SEKTORIN LATAUS =================
-function loadSector(id) {
+function loadSector(id, snap) {
   cfg = SECTORS.find(s => s.id === id) || SECTORS[0];
-  battleWaves = wavesFor(cfg, threatOf(cfg.id)); battleResolved = false;
+  battleWaves = snap ? snap.waves : wavesFor(cfg, threatOf(cfg.id)); battleResolved = false;
+  units = []; cleared = new Set(); moveMarker.visible = false;
   scene.remove(world); world = new THREE.Group(); scene.add(world);
   structs.clear(); rubble.clear();
   strikes = []; supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false;
   enemies = []; projectiles = []; effects = []; barrages = []; queue = []; barrageTimes = []; deer = []; shockwaves = [];
-  money = cfg.money; lives = 20; wave = 0; phase = 'build'; speed = 1; paused = false; gameOver = false; endless = false;
+  money = cfg.money + 100 + (progress.upg.budget || 0) * 100; lives = 20; wave = 0; phase = 'build'; speed = 1; paused = false; gameOver = false; endless = false;
+  if (!snap && progress.reserve > 0) { money += 250; progress.reserve--; }
   tool = null; selected = null; pendingTile = -1; barrageWarned = false; deerWarned = false; leaveArmed = 0;
   genSector(cfg);
   winter = seasonOf(1);
+  cond = 'clear'; nextCond = 'clear';
   refreshAllTiles();
   buildTrees();
   buildTown();
   buildBorder();
-  scene.background.setHex(SKY[winter ? 1 : 0]); scene.fog.color.setHex(SKY[winter ? 1 : 0]);
+  setCondition('clear');
   preview = new THREE.Group(); world.add(preview);
   if (cfg.reindeer) spawnDeer(cfg.reindeer);
+  // säilyneet asemat tai kesken jäänyt taistelu
+  const keep = snap || progress.forts[cfg.id];
+  if (keep) {
+    for (const i of keep.cleared || []) { if (terr[i] === FOREST) clearTile(i); else cleared.add(i); }
+    for (const d of keep.structs || []) {
+      if (structs.has(d.i)) continue;
+      const st = build(d.kind, d.i, true);
+      for (let l = 2; l <= (d.lvl || 1); l++) { st.lvl = l; st.group.userData.turret.scale.setScalar(1 + .1 * (l - 1)); addLevelMark(st); }
+      for (let f = 1; f <= (d.fort || 0); f++) { st.fort = f; addFortMesh(st); }
+      if (st.def.hp) { st.maxHp = calcMaxHp(st); st.hp = d.hp != null ? Math.min(d.hp, st.maxHp) : st.maxHp; if (st.hp < st.maxHp) { st.bar.root.visible = true; st.bar.set(st.hp / st.maxHp); } }
+      if (d.charges != null) st.charges = d.charges;
+      if (d.spent) st.spent = d.spent;
+      st.kept = snap ? !!d.kept : true;
+    }
+    for (const d of keep.units || []) { const u = spawnUnit(d.kind, d.i, true); u.kept = snap ? !!d.kept : true; if (d.hp != null) { u.hp = d.hp; if (u.hp < u.maxHp) { u.bar.root.visible = true; u.bar.set(u.hp / u.maxHp); } } }
+    if (!snap && ((keep.structs || []).length || (keep.units || []).length)) setTimeout(() => toast(L('Aiemmin rakennetut asemat ovat yhä paikallaan.', 'Your earlier positions are still in place.'), 'ok', 3500), 1200);
+  }
+  if (snap) {
+    money = snap.money; lives = snap.lives; wave = snap.wave; nextCond = snap.nextCond || 'clear';
+    if (seasonOf(wave + 1) !== winter) { winter = seasonOf(wave + 1); refreshAllTiles(); colorTrees(); applyTownWinter(); for (const st of structs.values()) st.group.position.y = tileTop(st.i); }
+  } else if (!progress.battle) {
+    nextCond = 'clear';
+  }
   recomputeFields();
+  rebuildTools();
   setTool(null); select(null);
   hl.visible = ring.visible = ringIn.visible = false;
   resetCamera();
   screen = 'sector'; running = true;
   document.body.classList.remove('onmap');
   $('mapScreen').hidden = true;
-  $('sectorName').textContent = cfg.name;
+  $('sectorName').textContent = L(cfg.name, cfg.nameEn);
   updateHUD(true);
-  toast(`${cfg.name}: puolusta ${cfg.cityTo} – ${battleWaves} aaltoa${battleWaves === cfg.waves ? ' (suurhyökkäys)' : ' (tunnusteluisku)'}.`, 'info', 4000);
+  if (snap) toast(L(`Taistelu jatkuu: ${cfg.name}, aalto ${wave + 1}/${battleWaves}.`, `Battle resumes: ${cfg.nameEn || cfg.name}, wave ${wave + 1}/${battleWaves}.`), 'info', 4000);
+  else toast(L(`${cfg.name}: puolusta ${cfg.cityTo} – ${battleWaves} aaltoa${battleWaves === cfg.waves ? ' (suurhyökkäys)' : ' (tunnusteluisku)'}.`, `${cfg.nameEn || cfg.name}: defend ${cfg.city} – ${battleWaves} waves${battleWaves === cfg.waves ? ' (major offensive)' : ' (probing attack)'}.`), 'info', 4000);
+  saveBattle();
+  maybeStartTutorial();
+}
+// --- kesken jääneen taistelun tallennus (rakennusvaiheessa)
+function saveBattle() {
+  if (screen !== 'sector' || gameOver || battleResolved || phase !== 'build') return;
+  progress.battle = {
+    id: cfg.id, waves: battleWaves, wave, money, lives, nextCond,
+    cleared: [...cleared],
+    structs: [...structs.values()].map(x => ({ kind: x.kind, i: x.i, lvl: x.lvl, fort: x.fort, charges: x.charges, hp: x.hp, spent: x.spent, kept: !!x.kept })),
+    units: units.filter(u => !u.dead).map(u => ({ kind: u.kind, i: u.i, hp: u.hp, kept: !!u.kept })),
+  };
+  saveProgress();
 }
 
 // ================= STRATEGINEN KARTTA =================
@@ -1163,9 +1511,9 @@ function buildMap() {
   h += `<polygon points="${pstr(rus)}" fill="#2a3036"/><polygon points="${pstr(rus)}" fill="url(#hatch)"/>`;
   h += `<polygon points="${pstr(FIN_OUTLINE)}" fill="#46613f" stroke="#dfe7ea" stroke-width="1.5" stroke-linejoin="round"/>`;
   const [rx, ry] = proj(32.4, 65.6);
-  h += `<text x="${rx}" y="${ry}" class="mlabel big" text-anchor="middle">VENÄJÄ</text>`;
+  h += `<text x="${rx}" y="${ry}" class="mlabel big" text-anchor="middle">${L('VENÄJÄ', 'RUSSIA')}</text>`;
   const [fx, fy] = proj(25.6, 63.4);
-  h += `<text x="${fx}" y="${fy}" class="mlabel big" text-anchor="middle" fill-opacity=".5">SUOMI</text>`;
+  h += `<text x="${fx}" y="${fy}" class="mlabel big" text-anchor="middle" fill-opacity=".5">${L('SUOMI', 'FINLAND')}</text>`;
   for (const c of CITIES) {
     const [x, y] = proj(c.lon, c.lat);
     h += c.capital ? `<text x="${x}" y="${y + 4}" text-anchor="middle" class="star">★</text>` : `<circle cx="${x}" cy="${y}" r="3" fill="#f2f5f7"/>`;
@@ -1173,83 +1521,242 @@ function buildMap() {
   }
   for (const s of SECTORS) {
     const pts = clipBorder(s.lat[0], s.lat[1]);
-    const lv = levelOf(threatOf(s.id)), L = LEVEL[lv], sel = s.id === mapSel;
+    const lv = levelOf(threatOf(s.id)), LV = LEVEL[lv], sel = s.id === mapSel;
     if (lv !== 'calm') {
       const [ax, ay] = proj(...s.crossing), [bx, by] = proj(...s.target);
       const mx = ax + (bx - ax) * .8, my = ay + (by - ay) * .8;
-      h += `<line x1="${ax + 6}" y1="${ay}" x2="${mx}" y2="${my}" stroke="${L.col}" stroke-width="${lv === 'red' ? 3.5 : 2.2}" stroke-dasharray="${lv === 'red' ? '7 4' : '4 5'}" marker-end="url(#${lv === 'red' ? 'arrR' : 'arrY'})" class="${lv === 'red' ? 'pulse' : ''}"/>`;
+      h += `<line x1="${ax + 6}" y1="${ay}" x2="${mx}" y2="${my}" stroke="${LV.col}" stroke-width="${lv === 'red' ? 3.5 : 2.2}" stroke-dasharray="${lv === 'red' ? '7 4' : '4 5'}" marker-end="url(#${lv === 'red' ? 'arrR' : 'arrY'})" class="${lv === 'red' ? 'pulse' : ''}"/>`;
     }
     if (sel) h += `<polyline points="${pstr(pts)}" fill="none" stroke="#ffffff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".9"/>`;
-    h += `<polyline points="${pstr(pts)}" fill="none" stroke="${L.col}" stroke-width="${sel ? 9 : 7}" stroke-linecap="round" stroke-linejoin="round" class="${lv === 'red' ? 'pulse' : ''}"/>`;
+    h += `<polyline points="${pstr(pts)}" fill="none" stroke="${LV.col}" stroke-width="${sel ? 9 : 7}" stroke-linecap="round" stroke-linejoin="round" class="${lv === 'red' ? 'pulse' : ''}"/>`;
     h += `<polyline points="${pstr(pts)}" fill="none" stroke="transparent" stroke-width="34" class="hit" data-id="${s.id}"/>`;
     const [mx, my] = proj(...s.crossing);
-    h += `<g class="hit" data-id="${s.id}"><circle cx="${mx + 16}" cy="${my}" r="${sel ? 13 : 11}" fill="${L.col}" stroke="${sel ? '#fff' : '#0d141b'}" stroke-width="2"/>`;
-    h += `<text x="${mx + 16}" y="${my + 4.5}" text-anchor="middle" class="num">${L.badge || s.no}</text>`;
+    h += `<g class="hit" data-id="${s.id}"><circle cx="${mx + 16}" cy="${my}" r="${sel ? 13 : 11}" fill="${LV.col}" stroke="${sel ? '#fff' : '#0d141b'}" stroke-width="2"/>`;
+    h += `<text x="${mx + 16}" y="${my + 4.5}" text-anchor="middle" class="num">${LV.badge || s.no}</text>`;
     h += `<text x="${mx + 32}" y="${my + 4}" class="mlabel sec">${s.short}</text></g>`;
   }
   svg.innerHTML = h;
   svg.querySelectorAll('.hit').forEach(el => el.addEventListener('click', () => {
     const id = el.dataset.id, isMarker = el.tagName.toLowerCase() === 'g';
     // toinen napautus jo valitun uhatun sektorin palloon -> suoraan taisteluun
-    if (isMarker && id === mapSel && mapTapId === id && !progress.over && levelOf(threatOf(id)) !== 'calm') { mapTapId = null; loadSector(id); return; }
+    if (isMarker && id === mapSel && mapTapId === id && !progress.over && levelOf(threatOf(id)) !== 'calm' && (!progress.battle || progress.battle.id === id)) { mapTapId = null; goSector(id); return; }
     mapTapId = isMarker ? id : null;
     mapSel = id; buildMap(); renderBrief();
   }));
 }
 function seasonRange(arr, n) {
   const w = arr.filter(x => x <= n);
-  if (!w.length) return 'ei talvea';
-  return `aallot ${w[0]}–${w[w.length - 1]}`;
+  if (!w.length) return L('ei talvea', 'no winter');
+  return L(`aallot ${w[0]}–${w[w.length - 1]}`, `waves ${w[0]}–${w[w.length - 1]}`);
 }
 function renderBrief() {
   const p = progress;
   if (p.over) {
-    $('brief').innerHTML = `<div class="prog"><b class="brand">SALPA</b> · Kampanja päättyi</div>
-      <h2>${p.over === 'won' ? '🇫🇮 Itäraja piti!' : 'Puolustus romahti'}</h2>
-      <p>${p.over === 'won' ? `Kestit ${CAMPAIGN_WEEKS} viikkoa. Torjuttuja hyökkäyksiä ${p.wins}, menetettyjä taisteluita ${p.losses}.` : `Valtakunnan puolustuskestävyys loppui viikolla ${p.week - 1}. Torjuttuja hyökkäyksiä ${p.wins}.`}</p>
-      <ul class="report">${p.report.map(r => `<li>${r}</li>`).join('')}</ul>
-      <button class="primary big" id="newCampBtn">Uusi kampanja ▶</button>`;
+    $('brief').innerHTML = `<div class="prog"><b class="brand">SALPA</b> · ${L('Kampanja päättyi', 'Campaign over')}</div>
+      <h2>${p.over === 'won' ? L('🇫🇮 Itäraja piti!', '🇫🇮 The eastern border held!') : L('Puolustus romahti', 'The defence collapsed')}</h2>
+      <p>${p.over === 'won' ? L(`Kestit ${CAMPAIGN_WEEKS} viikkoa. Torjuttuja hyökkäyksiä ${p.wins}, menetettyjä taisteluita ${p.losses}.`, `You held for ${CAMPAIGN_WEEKS} weeks. Attacks repelled ${p.wins}, battles lost ${p.losses}.`) : L(`Valtakunnan puolustuskestävyys loppui viikolla ${p.week - 1}. Torjuttuja hyökkäyksiä ${p.wins}.`, `National resilience ran out in week ${p.week - 1}. Attacks repelled ${p.wins}.`)}</p>
+      <ul class="report">${p.report.map(r => `<li>${rt(r)}</li>`).join('')}</ul>
+      <button class="primary big" id="newCampBtn">${L('Uusi kampanja', 'New campaign')} ▶</button>`;
     $('newCampBtn').onclick = () => { progress = newCampaign(); saveProgress(); mapSel = mostUrgent(); buildMap(); renderBrief(); };
     return;
   }
   const s = SECTORS.find(x => x.id === mapSel);
-  const t = threatOf(s.id), lv = levelOf(t), L = LEVEL[lv], waves = wavesFor(s, t);
+  const t = threatOf(s.id), lv = levelOf(t), LV = LEVEL[lv], waves = wavesFor(s, t);
   const reds = SECTORS.filter(x => levelOf(threatOf(x.id)) === 'red').length;
   const hearts = '♥'.repeat(p.resil) + '♡'.repeat(MAX_RESIL - p.resil);
+  const pb = p.battle, pbS = pb && SECTORS.find(x => x.id === pb.id);
+  const here = pb && pb.id === s.id;
+  const startMoney = s.money + 100 + (p.upg.budget || 0) * 100 + (p.reserve > 0 ? 250 : 0);
+  let goTxt, goDis = false;
+  if (here) goTxt = L(`Jatka taistelua (aalto ${pb.wave + 1}/${pb.waves}) ▶`, `Resume battle (wave ${pb.wave + 1}/${pb.waves}) ▶`);
+  else if (pb) { goTxt = L(`Kesken: ${pbS.name}`, `In progress: ${pbS.nameEn || pbS.name}`); goDis = true; }
+  else if (lv === 'calm') { goTxt = L('Ei hyökkäystä – valitse uhattu sektori', 'No attack – pick a threatened sector'); goDis = true; }
+  else goTxt = L('Puolusta sektoria ▶', 'Defend sector ▶');
   $('brief').innerHTML = `
-    <div class="prog"><b class="brand">SALPA</b> · Viikko <b>${p.week}/${CAMPAIGN_WEEKS}</b> · Kestävyys <span class="hearts">${hearts}</span></div>
-    ${p.report.length ? `<div class="sitrep"><b>Tilannekatsaus</b><ul class="report">${p.report.map(r => `<li>${r}</li>`).join('')}</ul></div>` : ''}
-    <h2><span class="no" style="background:${L.col}">${L.badge || s.no}</span> ${s.name}</h2>
-    <div class="sub">${s.area} · puolustettava: <b>${s.city}</b></div>
-    <div class="threat ${lv}"><div class="tl"><b>${L.label}</b><span>${L.text}</span></div>
-      <div class="bar"><i style="width:${t}%;background:${L.col}"></i></div></div>
-    <p>${s.desc}</p>
-    <ul class="facts">${s.facts.map(f => `<li>${f}</li>`).join('')}
-      <li>❄️ Talvi: ${seasonRange(s.winter, waves)}</li>
-      ${s.reindeer ? `<li>🦌 Poroja maastossa – ne hidastavat vihollisen ajoneuvoja</li>` : ''}
+    <div class="prog"><b class="brand">SALPA</b> · ${L('Viikko', 'Week')} <b>${p.week}/${CAMPAIGN_WEEKS}</b> · ${L('Kestävyys', 'Resilience')} <span class="hearts">${hearts}</span>
+      <button class="ico-btn" id="setBtn2" title="${L('Asetukset', 'Settings')}">${ICONS.gear}</button></div>
+    <div class="campbar">
+      <button id="shopBtn">🛒 ${L('Hankinnat', 'Procurement')} <b>${p.funds} M€</b></button>
+      <button id="mobBtn" ${p.mobilizeCd > 0 || pb ? 'disabled' : ''} title="${L('Kutsu reservi: kuluttaa viikon, seuraavat 2 taistelua +250 €', 'Mobilise reserves: takes a week, next 2 battles +250 €')}">📣 ${p.mobilizeCd > 0 ? L(`Reservi (${p.mobilizeCd} vk)`, `Reserves (${p.mobilizeCd} wk)`) : L('Kutsu reservi', 'Mobilise')}</button>
+    </div>
+    ${p.reserve > 0 ? `<div class="okline">📣 ${L(`Reservi käytössä: vielä ${p.reserve} taistelua +250 €`, `Reserves active: ${p.reserve} more battles +250 €`)}</div>` : ''}
+    ${pb ? `<div class="resume">⏸ ${L(`Kesken jäänyt taistelu: <b>${pbS.name}</b>, aalto ${pb.wave + 1}/${pb.waves}`, `Unfinished battle: <b>${pbS.nameEn || pbS.name}</b>, wave ${pb.wave + 1}/${pb.waves}`)}
+      <div class="row2"><button class="primary" id="resumeBtn">${L('Jatka', 'Resume')} ▶</button><button id="abandonBtn">${L('Luovu (tappio)', 'Abandon (loss)')}</button></div></div>` : ''}
+    ${p.report.length ? `<div class="sitrep"><b>${L('Tilannekatsaus', 'Situation report')}</b><ul class="report">${p.report.map(r => `<li>${rt(r)}</li>`).join('')}</ul></div>` : ''}
+    <h2><span class="no" style="background:${LV.col}">${LV.badge || s.no}</span> ${L(s.name, s.nameEn || s.name)}</h2>
+    <div class="sub">${s.area} · ${L('puolustettava', 'defend')}: <b>${s.city}</b></div>
+    <div class="threat ${lv}"><div class="tl"><b>${L(LV.label, LV.labelEn)}</b><span>${L(LV.text, LV.textEn)}</span></div>
+      <div class="bar"><i style="width:${t}%;background:${LV.col}"></i></div></div>
+    <p>${L(s.desc, s.descEn || s.desc)}</p>
+    <ul class="facts">${(settings.lang === 'en' && s.factsEn ? s.factsEn : s.facts).map(f => `<li>${f}</li>`).join('')}
+      <li>❄️ ${L('Talvi', 'Winter')}: ${seasonRange(s.winter, waves)}</li>
+      ${s.reindeer ? `<li>🦌 ${L('Poroja maastossa – ne hidastavat vihollisen ajoneuvoja', 'Reindeer roam here – they slow enemy vehicles')}</li>` : ''}
+      ${p.forts[s.id] && p.forts[s.id].structs.length ? `<li>🛡 ${L(`Säilyneitä asemia: ${p.forts[s.id].structs.length + p.forts[s.id].units.length}`, `Surviving positions: ${p.forts[s.id].structs.length + p.forts[s.id].units.length}`)}</li>` : ''}
     </ul>
-    <div class="row"><span>Taistelu</span><b>${lv === 'calm' ? '–' : `${waves} aaltoa${lv === 'red' ? ' (suurhyökkäys)' : ' (tunnusteluisku)'}`}</b></div>
-    <div class="row"><span>Aloitusbudjetti</span><b>${s.money} €</b></div>
-    <div class="row"><span>Torjuttu täällä</span><b>${p.held[s.id] || 0}×</b></div>
-    <button class="primary big" id="goBtn" ${lv === 'calm' ? 'disabled' : ''}>${lv === 'calm' ? 'Ei hyökkäystä – valitse uhattu sektori' : 'Puolusta sektoria ▶'}</button>
-    ${lv !== 'calm' ? '<div class="tip">Vinkki: napauta kartalla sektorin palloa uudelleen, niin pääset suoraan taisteluun.</div>' : ''}
-    ${reds > 1 ? `<p class="warn">⚠ ${reds} sektoria on kiireellisiä. Jokainen viikko, jonka kiireellinen sektori jää ilman puolustusta, vie kestävyyttä.</p>` : reds === 1 && lv !== 'red' ? `<p class="warn">⚠ Kiireellinen sektori jää ilman puolustusta, jos taistelet täällä – kestävyys −1.</p>` : ''}
+    <div class="row"><span>${L('Taistelu', 'Battle')}</span><b>${lv === 'calm' ? '–' : `${waves} ${L('aaltoa', 'waves')}${lv === 'red' ? L(' (suurhyökkäys)', ' (major offensive)') : L(' (tunnusteluisku)', ' (probing attack)')}`}</b></div>
+    <div class="row"><span>${L('Aloitusbudjetti', 'Starting budget')}</span><b>${startMoney} €</b></div>
+    <div class="row"><span>${L('Torjuttu täällä', 'Repelled here')}</span><b>${p.held[s.id] || 0}×</b></div>
+    <button class="primary big" id="goBtn" ${goDis ? 'disabled' : ''}>${goTxt}</button>
+    ${!goDis ? `<div class="tip">${L('Vinkki: napauta kartalla sektorin palloa uudelleen, niin pääset suoraan taisteluun.', 'Tip: tap the sector marker again to go straight into battle.')}</div>` : ''}
+    ${reds > 1 ? `<p class="warn">⚠ ${L(`${reds} sektoria on kiireellisiä. Jokainen viikko, jonka kiireellinen sektori jää ilman puolustusta, vie kestävyyttä.`, `${reds} sectors are urgent. Every week an urgent sector is left undefended costs resilience.`)}</p>` : reds === 1 && lv !== 'red' ? `<p class="warn">⚠ ${L('Kiireellinen sektori jää ilman puolustusta, jos taistelet täällä – kestävyys −1.', 'The urgent sector will be left undefended if you fight here – resilience −1.')}</p>` : ''}
     <div class="secList">${SECTORS.map(x => { const l = levelOf(threatOf(x.id)); return `<button data-id="${x.id}" class="${x.id === mapSel ? 'sel' : ''} lv-${l}"><i style="background:${LEVEL[l].col}"></i>${LEVEL[l].badge ? LEVEL[l].badge + ' ' : ''}${x.short}</button>`; }).join('')}</div>
-    <button class="ghost" id="resetCampBtn">Aloita kampanja alusta</button>`;
-  $('goBtn').onclick = () => { if (lv !== 'calm') loadSector(s.id); };
+    <button class="ghost" id="resetCampBtn">${L('Aloita kampanja alusta', 'Restart campaign')}</button>`;
+  $('goBtn').onclick = () => { if (!goDis) goSector(s.id); };
+  $('setBtn2').onclick = openSettings;
+  $('shopBtn').onclick = openShop;
+  $('mobBtn').onclick = () => {
+    if (performance.now() - resetArmed > 3000) { resetArmed = performance.now(); $('mobBtn').textContent = L('Kuluttaa viikon – napauta uudelleen', 'Takes a week – tap again'); return; }
+    resetArmed = 0;
+    progress.reserve += 2; progress.mobilizeCd = 4;
+    const rep = [B('📣 Reservi kutsuttu: seuraavat 2 taistelua +250 € aloitusbudjetti.', '📣 Reserves mobilised: next 2 battles +250 € starting budget.')];
+    tickWeek(null, rep); sfx('ui');
+    if (SECTORS.some(x => levelOf(threatOf(x.id)) === 'red')) sfx('alarm');
+    mapSel = mostUrgent(); buildMap(); renderBrief();
+  };
+  if (pb) {
+    $('resumeBtn').onclick = () => goSector(pb.id);
+    $('abandonBtn').onclick = () => {
+      if (performance.now() - resetArmed > 3000) { resetArmed = performance.now(); $('abandonBtn').textContent = L('Varmasti?', 'Sure?'); return; }
+      resetArmed = 0;
+      cfg = pbS; battleResolved = false; lives = 0; units = []; structs.clear(); cleared = new Set();
+      resolveBattle(pb.id, false); mapSel = mostUrgent(); buildMap(); renderBrief();
+    };
+  }
   $('brief').querySelectorAll('.secList button').forEach(b => b.onclick = () => { mapSel = b.dataset.id; buildMap(); renderBrief(); });
   $('resetCampBtn').onclick = () => {
-    if (performance.now() - resetArmed > 3000) { resetArmed = performance.now(); $('resetCampBtn').textContent = 'Varmasti? Napauta uudelleen'; return; }
+    if (performance.now() - resetArmed > 3000) { resetArmed = performance.now(); $('resetCampBtn').textContent = L('Varmasti? Napauta uudelleen', 'Sure? Tap again'); return; }
     progress = newCampaign(); saveProgress(); mapSel = mostUrgent(); buildMap(); renderBrief();
   };
 }
+function goSector(id) {
+  const pb = progress.battle;
+  if (pb && pb.id === id) loadSector(id, pb); else loadSector(id);
+}
 function showMap() {
   screen = 'map'; running = false;
-  mapSel = mostUrgent(); mapTapId = null;
-  setTool(null); select(null);
+  mapSel = progress.battle ? progress.battle.id : mostUrgent(); mapTapId = null;
+  setTool(null); select(null); setCondition('clear'); snow.visible = false;
+  if (SECTORS.some(x => levelOf(threatOf(x.id)) === 'red')) sfx('alarm');
   document.body.classList.add('onmap');
   $('mapScreen').hidden = false; $('overlay').hidden = true;
   buildMap(); renderBrief();
+}
+
+// ================= MODAALIT: ASETUKSET JA HANKINNAT =================
+function openModal(html) { const m = $('modal'); m.querySelector('.box').innerHTML = html + `<button class="close" id="modalClose">✕</button>`; m.hidden = false; $('modalClose').onclick = closeModal; }
+function closeModal() { $('modal').hidden = true; if (pausedBySettings) { pausedBySettings = false; paused = false; updateHUD(true); } }
+$('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+function openSettings() {
+  const opt = (key, val, label) => `<button class="seg ${settings[key] === val ? 'on' : ''}" data-k="${key}" data-v="${val}">${label}</button>`;
+  openModal(`<h2>${ICONS.gear} ${L('Asetukset', 'Settings')}</h2>
+    <div class="setrow"><span>${L('Grafiikka', 'Graphics')}</span><div class="segs">${opt('gfx', 'high', L('Korkea', 'High'))}${opt('gfx', 'med', L('Keski', 'Medium'))}${opt('gfx', 'low', L('Matala', 'Low'))}</div></div>
+    <p class="small">${L('Matala: ei varjoja ja pienempi tarkkuus – sujuvampi heikoilla puhelimilla.', 'Low: no shadows and lower resolution – smoother on weak phones.')}</p>
+    <div class="setrow"><span>${L('Äänet', 'Sound')}</span><div class="segs">${opt('sound', true, L('Päällä', 'On'))}${opt('sound', false, L('Pois', 'Off'))}</div></div>
+    <div class="setrow"><span>${L('Kieli', 'Language')}</span><div class="segs">${opt('lang', 'fi', 'Suomi')}${opt('lang', 'en', 'English')}</div></div>
+    <div class="setrow"><span>${L('Opastus', 'Tutorial')}</span><button id="tutReset">${L('Näytä opastus uudelleen', 'Show tutorial again')}</button></div>`);
+  $('modal').querySelectorAll('.seg').forEach(b => b.onclick = () => {
+    const k = b.dataset.k; let v = b.dataset.v; if (v === 'true') v = true; if (v === 'false') v = false;
+    settings[k] = v; saveSettings(); sfx('ui');
+    if (k === 'gfx') applyGfx();
+    if (k === 'sound') { setSoundEnabled(v); if (v) { initAudio(); sfx('ui'); } }
+    if (k === 'lang') applyLang();
+    openSettings();
+  });
+  $('tutReset').onclick = () => { try { localStorage.removeItem(TUT_KEY); } catch (e) { /* */ } toast(L('Opastus näytetään seuraavassa taistelussa.', 'The tutorial will show in the next battle.'), 'ok', 2500); closeModal(); };
+}
+const SHOP = [
+  { k: 'leo', cost: 400 }, { k: 'k9', cost: 350 }, { k: 'nasams', cost: 450 }, { k: 'amv', cost: 250 },
+  { k: 'budget', upg: true, max: 3, cost: 150, icon: '💶', name: 'Lisäbudjetti', nameEn: 'Extra budget', desc: '+100 € aloitusbudjettia jokaiseen taisteluun.', descEn: '+100 € starting budget in every battle.' },
+  { k: 'support', upg: true, max: 2, cost: 200, icon: '📡', name: 'Tulituen tehostus', nameEn: 'Fire support boost', desc: 'F-35:n ja HIMARSin latausaika −2 min.', descEn: 'F-35 and HIMARS cooldown −2 min.' },
+];
+function openShop() {
+  const p = progress;
+  const rows = SHOP.map(it => {
+    const d = DEFS[it.k];
+    const owned = it.upg ? (p.upg[it.k] || 0) >= it.max : !!p.unlocked[it.k];
+    const lvl = it.upg ? ` (${p.upg[it.k] || 0}/${it.max})` : '';
+    const name = it.upg ? L(it.name, it.nameEn) : d.name;
+    const desc = it.upg ? L(it.desc, it.descEn) : `${L(d.desc, d.descEn || d.desc)} ${L('Hinta taistelussa', 'Cost in battle')}: ${d.cost} €.`;
+    return `<div class="shopitem ${owned ? 'owned' : ''}"><span class="sico">${it.upg ? it.icon : ICONS[it.k]}</span>
+      <div class="sinfo"><b>${name}${lvl}</b><small>${desc}</small></div>
+      <button class="primary" data-k="${it.k}" ${owned || p.funds < it.cost ? 'disabled' : ''}>${owned ? (it.upg ? L('Maksimi', 'Max') : L('Hankittu', 'Owned')) : `${it.cost} M€`}</button></div>`;
+  }).join('');
+  openModal(`<h2>🛒 ${L('Hankinnat', 'Procurement')}</h2><p class="small">${L('Määrärahoja kertyy torjutuista hyökkäyksistä. Hankitut kalustot ovat käytössä kaikissa taisteluissa.', 'Funds are earned by repelling attacks. Purchased equipment is available in all battles.')} <b>${L('Käytettävissä', 'Available')}: ${p.funds} M€</b></p>${rows}`);
+  $('modal').querySelectorAll('.shopitem button').forEach(b => b.onclick = () => {
+    const it = SHOP.find(x => x.k === b.dataset.k); if (!it || p.funds < it.cost) return;
+    p.funds -= it.cost;
+    if (it.upg) p.upg[it.k] = (p.upg[it.k] || 0) + 1; else p.unlocked[it.k] = true;
+    saveProgress(); sfx('coin'); rebuildTools(); openShop(); renderBrief();
+  });
+}
+function applyStaticTexts() {
+  const T = (id, fi, en, attr) => { const el = $(id); if (!el) return; if (attr) el.setAttribute(attr, L(fi, en)); else el.innerHTML = L(fi, en); };
+  T('introText', INTRO_FI, INTRO_EN);
+  T('startBtn', '🗺 Avaa kartta', '🗺 Open map');
+  T('tagline', 'Itärajan puolustus – Vaalimaalta Ylä-Lappiin', 'Defending the eastern border – from Vaalimaa to Upper Lapland');
+  T('camBtn', 'Palauta kamera', 'Reset camera', 'title');
+  T('setBtn', 'Asetukset', 'Settings', 'title');
+  T('leaveBtn', 'Strateginen kartta', 'Strategic map', 'title');
+  T('waveLbl', 'Aalto', 'Wave');
+  document.title = 'Salpa: Northern Front';
+}
+const INTRO_FI = $('introText') ? $('introText').innerHTML : '';
+const INTRO_EN = `<p>The eastern border is split into <b>six sectors</b> from South-East Finland to Upper Lapland. Each has its own terrain, roads and a city to defend. The enemy attacks from different directions – you decide where to send your forces.</p>
+  <ul>
+    <li><b>Terrain matters:</b> infantry moves through forests and swamps, vehicles stick to roads and fields. Lakes, sea and fells stop vehicles.</li>
+    <li><b>Fells</b> (Lapland): positions on a fell see far, +1 range.</li>
+    <li><b>Tank traps</b> stop vehicles. Funnel the enemy into kill zones – but never block the route completely.</li>
+    <li><b>Attacks:</b> on the map a red border = urgent major offensive, yellow = threat rising. Each battle takes a week, and meanwhile the threat grows elsewhere. Leaving an urgent sector undefended costs national resilience. Hold for 12 weeks.</li>
+    <li><b>Fire support:</b> ✈️ F-35 and 🚀 HIMARS are called in battle (hotkeys F and H). They recharge for 10 minutes after use.</li>
+    <li><b>Procurement:</b> repelled attacks earn funds for Leopard 2A6, K9 Thunder, NASAMS and Patria AMV.</li>
+    <li><b>Fortify:</b> tanks, drones, helicopters and artillery destroy your positions. Positions survive in a sector you hold.</li>
+    <li><b>Winter</b> freezes lakes and swamps. Night, fog and snowstorms shorten ranges.</li>
+    <li><b>Reindeer</b> graze in the north and can block an enemy column on the road.</li>
+  </ul>
+  <p><small>Controls: drag = pan · two fingers / right mouse = rotate and zoom · keys 1–9 = buildings, space = wave, F/H = fire support.</small></p>`;
+function applyLang() {
+  document.documentElement.lang = settings.lang;
+  if (typeof applyStaticTexts === 'function') applyStaticTexts();
+  rebuildTools();
+  if (screen === 'map') { buildMap(); renderBrief(); }
+  if (screen === 'sector') { updateHUD(true); updateSupportUI(true); if (selected) refreshPanel(); }
+}
+
+// ================= OPASTUS =================
+const TUT_KEY = 'salpa.opastus.v1';
+let tut = null, tutHl = null;
+const TUT = [
+  { fi: 'Tervetuloa rajalle! Vihollinen hyökkää <b>idästä (oikealta)</b> ja yrittää läpi kaupunkiin lännessä. Katkoviivat näyttävät reitit: <span class="lv">oranssi</span> = ajoneuvot, <span class="li">sininen</span> = jalkaväki.',
+    en: 'Welcome to the border! The enemy attacks <b>from the east (right)</b> and tries to reach the city in the west. Dashed lines show their routes: <span class="lv">orange</span> = vehicles, <span class="li">blue</span> = infantry.', next: true },
+  { fi: 'Valitse alapalkista <b>Konekivääriasema</b>.', en: 'Pick the <b>Machine-gun post</b> from the bottom bar.', hl: () => toolEls.mg, done: () => tool === 'mg' },
+  { fi: 'Rakenna se jalkaväen reitin varrelle: napauta ruutua (puhelimessa kahdesti). Valkoinen rengas näyttää kantaman.', en: 'Build it next to the infantry route: tap a tile (twice on a phone). The white ring shows its range.', done: () => [...structs.values()].some(x => x.kind === 'mg') },
+  { fi: 'Hyvä! Panssareita vastaan tarvitaan <b>Panssarintorjuntaohjus</b>. Rakenna se tien lähelle.', en: 'Good! Against armour you need an <b>Anti-tank missile</b>. Build one near the road.', hl: () => toolEls.atgm, done: () => [...structs.values()].some(x => x.kind === 'atgm'), skip: true },
+  { fi: 'Kun olet valmis, paina <b>Aloita aalto</b>.', en: 'When you are ready, press <b>Start wave</b>.', hl: () => $('waveBtn'), done: () => phase === 'wave' },
+  { fi: 'Napauta omaa asemaa: voit <b>päivittää</b>, <b>linnoittaa</b> ja <b>korjata</b> sen. Linnoitus suojaa vihollisen tulelta.', en: 'Tap one of your positions: you can <b>upgrade</b>, <b>fortify</b> and <b>repair</b> it. Fortification protects against enemy fire.', done: () => !!selected, skip: true },
+  { fi: 'Hätätilanteessa tilaa <b>tulitukea</b>: F-35 iskee panssareihin, HIMARS tuhoaa alueen. Ne latautuvat 10 minuuttia.', en: 'In an emergency call <b>fire support</b>: the F-35 strikes armour, HIMARS saturates an area. They recharge for 10 minutes.', hl: () => $('support'), next: true },
+  { fi: 'Siinä perusteet! Kampanjakartalla voit hankkia uutta kalustoa määrärahoilla. Onnea, puolustaja!', en: 'That is the basics! On the campaign map you can buy new equipment with funds. Good luck, defender!', next: true, last: true },
+];
+function maybeStartTutorial() {
+  let done = false; try { done = !!localStorage.getItem(TUT_KEY); } catch (e) { /* */ }
+  tut = done ? null : { step: 0 }; renderTut();
+}
+function endTutorial() { tut = null; try { localStorage.setItem(TUT_KEY, '1'); } catch (e) { /* */ } renderTut(); }
+function renderTut() {
+  if (tutHl) { tutHl.classList.remove('tut-hl'); tutHl = null; }
+  const el = $('tut');
+  if (!tut || screen !== 'sector') { el.hidden = true; return; }
+  const st = TUT[tut.step];
+  el.hidden = false;
+  el.innerHTML = `<div class="tstep">${tut.step + 1}/${TUT.length}</div><div class="ttext">${L(st.fi, st.en)}</div>
+    <div class="tbtns">${st.next ? `<button class="primary" id="tutNext">${st.last ? L('Valmis', 'Done') : L('Seuraava', 'Next')}</button>` : st.skip ? `<button id="tutNext">${L('Ohita vaihe', 'Skip step')}</button>` : ''}<button class="ghost" id="tutSkip">${L('Ohita opastus', 'Skip tutorial')}</button></div>`;
+  if ($('tutNext')) $('tutNext').onclick = () => { if (st.last) endTutorial(); else { tut.step++; renderTut(); } };
+  $('tutSkip').onclick = endTutorial;
+  const h = st.hl && st.hl(); if (h) { h.classList.add('tut-hl'); tutHl = h; }
+}
+function tutorialTick() {
+  if (!tut) return;
+  const st = TUT[tut.step];
+  if (st.done && st.done()) { tut.step++; if (tut.step >= TUT.length) endTutorial(); else renderTut(); }
 }
 
 // ================= UI =================
@@ -1260,47 +1767,76 @@ function toast(msg, kind = 'info', ms = 3200) {
   while ($('toasts').children.length > 3) $('toasts').firstChild.remove();
 }
 const toolEls = {};
-for (const [k, d] of Object.entries(DEFS)) {
-  const b = document.createElement('button'); b.className = 'tool';
-  b.title = `${d.name} – ${d.cost} €`;
-  b.innerHTML = `<span class="ico">${ICONS[k]}</span><span>${(w => w[0].toUpperCase() + w.slice(1))(d.name.split(' ').slice(-1)[0])}</span><small>${d.cost} €</small>`;
-  b.onclick = () => setTool(tool === k ? null : k);
-  $('tools').appendChild(b); toolEls[k] = b;
+const TOOL_LABEL = { mg: ['Konekivääri', 'Machine gun'], mortar: ['Kranaatinheitin', 'Mortar'], atgm: ['Pst-ohjus', 'Anti-tank'], aa: ['Ilmatorjunta', 'Anti-air'], obstacle: ['Hammaskivet', 'Tank traps'], mine: ['Miinoite', 'Mines'], k9: ['K9 Moukari', 'K9 Thunder'], nasams: ['NASAMS', 'NASAMS'], leo: ['Leopard', 'Leopard'], amv: ['Patria AMV', 'Patria AMV'] };
+const toolLabel = (d, k) => L(...TOOL_LABEL[k]);
+const refundOf = x => Math.round(x.spent * (x.kept ? .3 : .6));
+function dismantle(x) {
+  money += refundOf(x); destroyStruct(x, false); sfx('coin');
+  toast(L(`${x.def.name} purettu, +${refundOf(x)} €`, `${x.def.nameEn} dismantled, +${refundOf(x)} €`), 'ok', 1600);
+  updateHUD(true); saveBattle();
 }
+function rebuildTools() {
+  $('tools').innerHTML = '';
+  for (const k in toolEls) delete toolEls[k];
+  for (const [k, d] of Object.entries(DEFS)) {
+    if (d.locked && !progress.unlocked[k]) continue;
+    const b = document.createElement('button'); b.className = 'tool' + (d.mobile ? ' mob' : '');
+    b.title = `${L(d.name, d.nameEn || d.name)} – ${d.cost} €`;
+    b.innerHTML = `<span class="ico">${ICONS[k]}</span><span>${toolLabel(d, k)}</span><small>${d.cost} €</small>`;
+    b.onclick = () => { sfx('ui'); setTool(tool === k ? null : k); };
+    $('tools').appendChild(b); toolEls[k] = b;
+  }
+  const b = document.createElement('button'); b.className = 'tool demo';
+  b.title = L('Pura asemia ja esteitä (palautus 60 %)', 'Dismantle positions and obstacles (60 % refund)');
+  b.innerHTML = `<span class="ico">${ICONS.demolish}</span><span>${L('Pura', 'Dismantle')}</span><small>+60 %</small>`;
+  b.onclick = () => { sfx('ui'); setTool(tool === 'demolish' ? null : 'demolish'); };
+  $('tools').appendChild(b); toolEls.demolish = b;
+}
+rebuildTools();
 function setTool(k) {
   if (k && supportMode) { supportMode = null; pendingStrike = -1; strikeRing.visible = strikeDisk.visible = false; }
   tool = k; pendingTile = -1; hl.visible = false; ring.visible = ringIn.visible = false;
   for (const [kk, el] of Object.entries(toolEls)) el.classList.toggle('sel', kk === k);
-  if (k) { select(null); $('hint').hidden = false; $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${DEFS[k].name}</b> – ${DEFS[k].desc}${TOWERS.has(k) ? ' Tunturilla +1 kantama.' : ''}<br><small>${isTouch ? 'Napauta ruutua, napauta uudelleen rakentaaksesi.' : 'Klikkaa ruutua rakentaaksesi. Esc peruu.'}</small>`; }
+  if (k === 'demolish') { select(null); $('hint').hidden = false; $('hint').innerHTML = `<span class="hico">${ICONS.demolish}</span><b>${L('Pura', 'Dismantle')}</b> – ${L('napauta omaa asemaa, estettä, miinoitetta tai ajoneuvoa purkaaksesi sen. Saat takaisin 60 % hinnasta (aiemmista taisteluista säilyneistä 30 %).', 'tap your position, obstacle, minefield or vehicle to dismantle it. You get 60 % of the cost back (30 % for positions kept from earlier battles).')}<br><small>${isTouch ? L('Puhelimessa: napauta kahdesti.', 'On a phone: tap twice.') : L('Esc peruu.', 'Esc cancels.')}</small>`; return; }
+  if (k) { select(null); $('hint').hidden = false; $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${dn(DEFS[k])}</b> – ${dd(DEFS[k])}${TOWERS.has(k) ? L(' Tunturilla +1 kantama.', ' +1 range on a fell.') : ''}<br><small>${isTouch ? L('Napauta ruutua, napauta uudelleen rakentaaksesi.', 'Tap a tile, tap again to build.') : L('Klikkaa ruutua rakentaaksesi. Esc peruu.', 'Click a tile to build. Esc cancels.')}</small>`; }
   else $('hint').hidden = true;
 }
 function select(s) {
   selected = s;
   if (!s) { $('panel').hidden = true; if (!tool) { ring.visible = ringIn.visible = false; } return; }
   setTool(null); refreshPanel();
-  if (TOWERS.has(s.kind)) showRange(s.x, s.z, tileTop(s.i), towerRange(s.def, s.lvl, s.i), s.def.minRange);
+  if (TOWERS.has(s.kind) || s.mobile) showRange(s.x, s.z, tileTop(s.i), towerRange(s.def, s.lvl, s.i), s.def.minRange);
   else ring.visible = ringIn.visible = false;
 }
 function refreshPanel() {
   const s = selected; if (!s) return; const p = $('panel'); p.hidden = false;
-  const refund = Math.round(s.spent * .6);
-  let html = `<h3><span class="hico">${ICONS[s.kind]}</span>${s.def.name}</h3>`;
-  if (TOWERS.has(s.kind)) {
+  const refund = refundOf(s);
+  let html = `<h3><span class="hico">${ICONS[s.kind]}</span>${dn(s.def)}</h3>`;
+  if (s.mobile) {
+    const rep = Math.ceil((1 - s.hp / s.maxHp) * s.def.cost * .5);
+    html += `<p class="mtip">${L('Napauta kartalta ruutua, niin ajoneuvo ajaa sinne.', 'Tap a tile on the map to drive there.')}</p>
+      <div class="row"><span>${L('Kunto', 'Condition')}</span><b>${Math.ceil(s.hp)}/${Math.round(s.maxHp)}</b></div>
+      <div class="row"><span>${L('Vahinko / kantama', 'Damage / range')}</span><b>${s.def.dmg} / ${towerRange(s.def, 1, s.i).toFixed(1)}</b></div>
+      <div class="btns">
+        <button data-a="rep" ${rep <= 0 || money < rep ? 'disabled' : ''}>🔧 ${L('Korjaa', 'Repair')}${rep > 0 ? ` ${rep} €` : ''}</button>
+        <button data-a="sell">🔨 ${L('Pura', 'Dismantle')} +${refund} €</button>
+      </div>`;
+  } else if (TOWERS.has(s.kind)) {
     const up = Math.round(s.def.cost * .8 * s.lvl), fc = FORT_COST[s.fort];
     const rep = Math.ceil((1 - s.hp / s.maxHp) * s.def.cost * .5);
-    html += `<div class="row"><span>Taso</span><b>${s.lvl}/3</b></div>
-      <div class="row"><span>Kunto</span><b>${Math.ceil(s.hp)}/${Math.round(s.maxHp)}</b></div>
-      <div class="row"><span>Linnoitus</span><b>${FORT_NAME[s.fort]}</b></div>
-      <div class="row"><span>Vahinko / kantama</span><b>${Math.round(s.def.dmg * (1 + .45 * (s.lvl - 1)))} / ${towerRange(s.def, s.lvl, s.i).toFixed(1)}${terr[s.i] === FELL ? ' ⛰' : ''}</b></div>
+    html += `<div class="row"><span>${L('Taso', 'Level')}</span><b>${s.lvl}/3</b></div>
+      <div class="row"><span>${L('Kunto', 'Condition')}</span><b>${Math.ceil(s.hp)}/${Math.round(s.maxHp)}</b></div>
+      <div class="row"><span>${L('Linnoitus', 'Fortification')}</span><b>${L(...FORT_NAME[s.fort])}</b></div>
+      <div class="row"><span>${L('Vahinko / kantama', 'Damage / range')}</span><b>${Math.round(s.def.dmg * (1 + .45 * (s.lvl - 1)))} / ${towerRange(s.def, s.lvl, s.i).toFixed(1)}${terr[s.i] === FELL ? ' ⛰' : ''}</b></div>
       <div class="btns">
-        <button data-a="up" ${s.lvl >= 3 || money < up ? 'disabled' : ''}>⬆ Päivitä${s.lvl < 3 ? ` ${up} €` : ''}</button>
-        <button data-a="fort" ${s.fort >= 2 || money < fc ? 'disabled' : ''}>🛡 Linnoita${s.fort < 2 ? ` ${fc} €` : ''}</button>
-        <button data-a="rep" ${rep <= 0 || money < rep ? 'disabled' : ''}>🔧 Korjaa${rep > 0 ? ` ${rep} €` : ''}</button>
-        <button data-a="sell">💰 Myy +${refund} €</button>
+        <button data-a="up" ${s.lvl >= 3 || money < up ? 'disabled' : ''}>⬆ ${L('Päivitä', 'Upgrade')}${s.lvl < 3 ? ` ${up} €` : ''}</button>
+        <button data-a="fort" ${s.fort >= 2 || money < fc ? 'disabled' : ''}>🛡 ${L('Linnoita', 'Fortify')}${s.fort < 2 ? ` ${fc} €` : ''}</button>
+        <button data-a="rep" ${rep <= 0 || money < rep ? 'disabled' : ''}>🔧 ${L('Korjaa', 'Repair')}${rep > 0 ? ` ${rep} €` : ''}</button>
+        <button data-a="sell">🔨 ${L('Pura', 'Dismantle')} +${refund} €</button>
       </div>`;
   } else {
-    html += `<p>${s.def.desc}</p>${s.kind === 'mine' ? `<div class="row"><span>Miinoja jäljellä</span><b>${s.charges}</b></div>` : ''}
-      <div class="btns"><button data-a="sell">💰 Poista +${refund} €</button></div>`;
+    html += `<p>${dd(s.def)}</p>${s.kind === 'mine' ? `<div class="row"><span>${L('Miinoja jäljellä', 'Mines left')}</span><b>${s.charges}</b></div>` : ''}
+      <div class="btns"><button data-a="sell">🔨 ${L('Pura', 'Dismantle')} +${refund} €</button></div>`;
   }
   html += `<button class="close" data-a="close">✕</button>`;
   p.innerHTML = html;
@@ -1309,7 +1845,7 @@ function refreshPanel() {
 function panelAction(a) {
   const s = selected; if (!s) return;
   if (a === 'close') return select(null);
-  if (a === 'sell') { money += Math.round(s.spent * .6); destroyStruct(s, false); }
+  if (a === 'sell') { dismantle(s); return; }
   else if (a === 'up') {
     const c = Math.round(s.def.cost * .8 * s.lvl); if (money < c || s.lvl >= 3) return;
     money -= c; s.spent += c; const r = s.hp / s.maxHp; s.lvl++; s.maxHp = calcMaxHp(s); s.hp = s.maxHp * r;
@@ -1323,27 +1859,31 @@ function panelAction(a) {
     money -= c; s.hp = s.maxHp; s.bar.root.visible = false;
   }
   if (s.bar && !s.dead) s.bar.set(s.hp / s.maxHp);
+  if (a !== 'sell') sfx('build');
   updateHUD(true); if (selected) refreshPanel();
+  saveBattle();
 }
 let lastHud = '';
 function updateHUD(force) {
   if (screen !== 'sector') return;
-  const key = `${money}|${lives}|${wave}|${phase}|${winter}|${speed}|${paused}`;
+  const key = `${money}|${lives}|${wave}|${phase}|${winter}|${speed}|${paused}|${cond}|${nextCond}`;
   if (!force && key === lastHud) return;
   const moneyChanged = !lastHud.startsWith(money + '|'); lastHud = key;
   $('money').textContent = money; $('lives').textContent = lives;
   $('wave').textContent = `${wave}/${battleWaves}`;
-  $('season').textContent = winter ? '❄️ Talvi' : '☀️ Sula maa';
+  $('season').textContent = (winter ? L('❄️ Talvi', '❄️ Winter') : L('☀️ Sula maa', '☀️ Thaw')) + (phase === 'wave' && cond !== 'clear' ? ` · ${COND[cond].icon} ${L(COND[cond].name, COND[cond].en)}` : '');
   $('speedBtn').textContent = speed + '×'; $('pauseBtn').textContent = paused ? '▶' : '⏸';
   const wb = $('waveBtn'); wb.disabled = phase !== 'build';
-  wb.textContent = phase === 'build' ? `▶ Aloita aalto ${wave + 1}` : `Aalto ${wave} käynnissä…`;
-  for (const [k, el] of Object.entries(toolEls)) el.classList.toggle('poor', money < DEFS[k].cost);
+  wb.textContent = phase === 'build' ? L(`▶ Aloita aalto ${wave + 1}`, `▶ Start wave ${wave + 1}`) : L(`Aalto ${wave} käynnissä…`, `Wave ${wave} in progress…`);
+  for (const [k, el] of Object.entries(toolEls)) if (DEFS[k]) el.classList.toggle('poor', money < DEFS[k].cost);
   if (phase === 'build') {
     const c = waveComp(wave + 1), parts = [];
-    if (c.inf) parts.push(`${c.inf}× jalkaväki`); if (c.bmp && spawns.veh.length) parts.push(`${c.bmp}× BMP`);
-    if (c.tank && spawns.veh.length) parts.push(`${c.tank}× panssarivaunu`); if (c.drone) parts.push(`${c.drone}× lennokki`);
-    const art = wave + 1 >= 5 ? ' · tykistötulta odotettavissa' : '';
-    $('intel').innerHTML = `<b>Tiedustelu, aalto ${wave + 1}${seasonOf(wave + 1) ? ' (talvi)' : ''}:</b> ${parts.join(', ')}${art}<br><small><span class="lv">━ ━</span> ajoneuvojen reitti &nbsp; <span class="li">┅┅</span> jalkaväen reitit</small>`;
+    if (c.inf) parts.push(`${c.inf}× ${L('jalkaväki', 'infantry')}`); if (c.bmp && spawns.veh.length) parts.push(`${c.bmp}× BMP`);
+    if (c.tank && spawns.veh.length) parts.push(`${c.tank}× ${L('panssarivaunu', 'tank')}`); if (c.drone) parts.push(`${c.drone}× ${L('lennokki', 'drone')}`);
+    if (c.heli) parts.push(`${c.heli}× ${L('taisteluhelikopteri', 'attack helicopter')}`); if (c.ew && spawns.veh.length) parts.push(`${c.ew}× ${L('häirintäasema', 'EW jammer')}`);
+    const art = (wave + 1 >= 6 ? L(' · tykistöpatteri rajan takana', ' · artillery battery across the border') : '') + (wave + 1 >= 5 ? L(' · erikoisjoukkojen uhka', ' · special forces threat') : '');
+    const nc = COND[nextCond]; const condTxt = nextCond !== 'clear' ? `<br>${nc.icon} <b>${L('Sää', 'Weather')}: ${L(nc.name, nc.en)}</b> – ${L(nc.desc, nc.descEn)}` : '';
+    $('intel').innerHTML = `<b>${L('Tiedustelu, aalto', 'Intel, wave')} ${wave + 1}${seasonOf(wave + 1) ? L(' (talvi)', ' (winter)') : ''}:</b> ${parts.join(', ')}${art}${condTxt}<br><small><span class="lv">━ ━</span> ${L('ajoneuvojen reitti', 'vehicle route')} &nbsp; <span class="li">┅┅</span> ${L('jalkaväen reitit', 'infantry routes')}</small>`;
     $('intel').hidden = false;
   } else $('intel').hidden = true;
   if (moneyChanged && selected) refreshPanel();
@@ -1352,12 +1892,15 @@ $('waveBtn').onclick = startWave;
 $('speedBtn').onclick = () => { speed = speed === 3 ? 1 : speed + 1; updateHUD(true); };
 $('pauseBtn').onclick = () => { paused = !paused; updateHUD(true); };
 $('camBtn').onclick = resetCamera;
+let pausedBySettings = false;
+$('setBtn').onclick = () => { if (!paused) { paused = true; pausedBySettings = true; updateHUD(true); } openSettings(); };
 $('leaveBtn').onclick = () => {
   const fighting = !gameOver && !battleResolved && wave > 0;
   if (fighting && performance.now() - leaveArmed > 3000) {
-    leaveArmed = performance.now(); toast('Vetäytyminen lasketaan tappioksi (kestävyys −1). Napauta 🗺 uudelleen vetäytyäksesi.', 'warn', 3500); return;
+    leaveArmed = performance.now(); toast(L('Vetäytyminen lasketaan tappioksi (kestävyys −1). Napauta 🗺 uudelleen vetäytyäksesi.', 'Retreating counts as a loss (resilience −1). Tap 🗺 again to retreat.'), 'warn', 3500); return;
   }
   if (fighting) resolveBattle(cfg.id, false);
+  else if (!battleResolved && wave === 0) { progress.battle = null; saveProgress(); }
   showMap();
 };
 addEventListener('keydown', e => {
@@ -1366,23 +1909,31 @@ addEventListener('keydown', e => {
   if (e.key === 'f' || e.key === 'F') setSupportMode('f35');
   if (e.key === 'h' || e.key === 'H') setSupportMode('himars');
   if (e.key === ' ') { e.preventDefault(); phase === 'build' ? startWave() : (paused = !paused, updateHUD(true)); }
-  const n = parseInt(e.key); if (n >= 1 && n <= 6) setTool(Object.keys(DEFS)[n - 1]);
+  const n = parseInt(e.key); const ks = Object.keys(toolEls); if (n >= 1 && n <= ks.length) setTool(ks[n - 1]);
 });
 
 // --- syöte
 let isTouch = matchMedia('(pointer: coarse)').matches;
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -.3), hit = new THREE.Vector3();
+let lastHit = new THREE.Vector3();
+function unitAt(x, z) { let b = null, bd = .6; for (const u of units) { const d = Math.hypot(u.x - x, u.z - z); if (!u.dead && d < bd) { bd = d; b = u; } } return b; }
 function tileAt(cx, cy) {
   const r = renderer.domElement.getBoundingClientRect();
   ndc.set((cx - r.left) / r.width * 2 - 1, -(cy - r.top) / r.height * 2 + 1);
   ray.setFromCamera(ndc, camera);
   if (!ray.ray.intersectPlane(plane, hit)) return -1;
+  lastHit.copy(hit);
   const x = Math.floor(hit.x), z = Math.floor(hit.z);
   if (x < 0 || z < 0 || x >= W || z >= H) return -1;
   return idx(x, z);
 }
 function previewTile(i) {
   if (i < 0 || !tool) { hl.visible = false; ring.visible = ringIn.visible = false; return null; }
+  if (tool === 'demolish') {
+    const has = structs.has(i) || units.some(u => !u.dead && u.i === i);
+    hl.visible = true; hl.position.set(ix(i) + .5, tileTop(i) + .03, iz(i) + .5); hlMat.color.setHex(has ? 0xff9933 : 0x777777);
+    ring.visible = ringIn.visible = false; return null;
+  }
   const err = canPlace(tool, i);
   hl.visible = true; hl.position.set(ix(i) + .5, tileTop(i) + .03, iz(i) + .5);
   hlMat.color.setHex(err ? 0xff9933 : 0x4da3ff);
@@ -1403,22 +1954,32 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (moved > 8 || dtm > 600 || screen !== 'sector' || gameOver) return;
   const i = tileAt(e.clientX, e.clientY);
   if (supportMode) {
-    if (i < 0) { toast('Valitse kohde kartalta.', 'warn', 1500); return; }
+    if (i < 0) { toast(L('Valitse kohde kartalta.', 'Pick a target on the map.'), 'warn', 1500); return; }
     if (isTouch && pendingStrike !== i) { pendingStrike = i; previewStrike(i); return; }
     callStrike(supportMode, i); return;
   }
+  if (tool === 'demolish') {
+    const target = (i >= 0 && unitAt(lastHit.x, lastHit.z)) || (i >= 0 && structs.get(i)) || null;
+    if (!target) { toast(L('Ruudussa ei ole purettavaa.', 'Nothing to dismantle here.'), 'warn', 1500); sfx('deny'); return; }
+    if (isTouch && pendingTile !== i) { pendingTile = i; previewTile(i); return; }
+    pendingTile = -1; dismantle(target); previewTile(i); return;
+  }
   if (tool) {
     if (isTouch && pendingTile !== i) { pendingTile = i; const err = previewTile(i); if (err && i >= 0) toast(err, 'warn', 1800); return; }
-    const err = i < 0 ? 'Kartan ulkopuolella' : canPlace(tool, i);
-    if (err) { toast(err, 'warn', 1800); previewTile(i); return; }
-    build(tool, i); pendingTile = -1; previewTile(i); updateHUD(true);
+    const err = i < 0 ? L('Kartan ulkopuolella', 'Outside the map') : canPlace(tool, i);
+    if (err) { toast(err, 'warn', 1800); previewTile(i); sfx('deny'); return; }
+    build(tool, i); pendingTile = -1; previewTile(i); updateHUD(true); saveBattle();
     if (money < DEFS[tool].cost) setTool(null);
   } else {
+    const u = i >= 0 ? unitAt(lastHit.x, lastHit.z) : null;
+    if (u) { select(u); sfx('ui'); return; }
+    if (selected && selected.mobile && i >= 0 && !structs.has(i)) { orderMove(selected, i); return; }
     select(i >= 0 && structs.has(i) ? structs.get(i) : null);
     if (i >= 0 && !structs.has(i)) {
       const t = terr[i];
       $('hint').hidden = false;
-      $('hint').innerHTML = `<b>${TERRAIN_NAME[t][0].toUpperCase() + TERRAIN_NAME[t].slice(1)}</b>${t === FELL ? ' – ajoneuvot eivät pääse, asemat näkevät kauas (+1 kantama)' : t === SWAMP ? (winter ? ' – jäätynyt, kantaa panssarit' : ' – ajoneuvot eivät pääse') : t === LAKE ? (winter ? ' – jäätynyt, kantaa kaiken' : ' – este kaikille') : ''}`;
+      const tn = L(...TERRAIN_NAME[t]);
+      $('hint').innerHTML = `<b>${tn[0].toUpperCase() + tn.slice(1)}</b>${t === FELL ? L(' – ajoneuvot eivät pääse, asemat näkevät kauas (+1 kantama)', ' – vehicles cannot pass, positions see far (+1 range)') : t === SWAMP ? (winter ? L(' – jäätynyt, kantaa panssarit', ' – frozen, carries tanks') : L(' – ajoneuvot eivät pääse', ' – impassable for vehicles')) : t === LAKE ? (winter ? L(' – jäätynyt, kantaa kaiken', ' – frozen, carries everything') : L(' – este kaikille', ' – blocks everyone')) : ''}`;
       clearTimeout(previewTile.tm); previewTile.tm = setTimeout(() => { if (!tool) $('hint').hidden = true; }, 2500);
     }
   }
@@ -1427,6 +1988,10 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
 });
 $('startBtn').onclick = () => { $('overlay').hidden = true; showMap(); };
+setSoundEnabled(settings.sound);
+applyStaticTexts(); document.documentElement.lang = settings.lang;
+addEventListener('pointerdown', () => initAudio(), { capture: true });
+addEventListener('keydown', () => initAudio(), { capture: true });
 // --- kansikuva (aloitusruutu)
 $('coverBg').style.backgroundImage = `url(${$('coverImg').src})`;
 function closeCover() {
@@ -1440,8 +2005,8 @@ addEventListener('keydown', coverKey);
 
 // ================= TULITUKI: F-35 JA HIMARS =================
 const SUPPORT = {
-  f35:    { name: 'F-35', icon: '✈️', cd: 600, radius: 3.5, key: 'f', desc: 'Hävittäjän täsmäisku: ohjautuvat pommit kohdealueen raskaimpiin ajoneuvoihin ja lennokkien alasampuminen.' },
-  himars: { name: 'HIMARS', icon: '🚀', cd: 600, radius: 1.8, key: 'h', desc: 'Raketinheitin: kahdeksan raketin aluetuli. Tuhoaa maalla kaiken kohdealueella.' },
+  f35:    { name: 'F-35', icon: '✈️', cd: 600, radius: 3.5, key: 'f', descEn: 'Fighter precision strike: guided bombs on the heaviest vehicles in the area, and shoots down drones and helicopters.', desc: 'Hävittäjän täsmäisku: ohjautuvat pommit kohdealueen raskaimpiin ajoneuvoihin ja lennokkien alasampuminen.' },
+  himars: { name: 'HIMARS', icon: '🚀', cd: 600, radius: 1.8, key: 'h', descEn: 'Rocket artillery: an eight-rocket salvo. Destroys everything on the ground in the area.', desc: 'Raketinheitin: kahdeksan raketin aluetuli. Tuhoaa maalla kaiken kohdealueella.' },
 };
 if (!progress.support) progress.support = { f35: 0, himars: 0 };
 let supportMode = null, pendingStrike = -1, strikes = [], supportUiT = 0;
@@ -1471,12 +2036,13 @@ const JET_PROTO = (() => {
 function setSupportMode(k) {
   if (screen !== 'sector' || gameOver) return;
   if (supportMode === k) { cancelSupport(); return; }
-  if (phase !== 'wave') { toast('Tulitukea voi tilata vain hyökkäyksen aikana.', 'warn', 2200); return; }
-  if (progress.support[k] > 0) { toast(`${SUPPORT[k].name} latautuu vielä ${fmtCd(progress.support[k])}.`, 'warn', 2200); return; }
+  if (phase !== 'wave') { toast(L('Tulitukea voi tilata vain hyökkäyksen aikana.', 'Fire support can only be called during an attack.'), 'warn', 2200); return; }
+  if (k === 'f35' && COND[cond].noAir) { toast(L('Sää estää lentotoiminnan.', 'Weather prevents air operations.'), 'warn', 2200); sfx('deny'); return; }
+  if (progress.support[k] > 0) { toast(L(`${SUPPORT[k].name} latautuu vielä ${fmtCd(progress.support[k])}.`, `${SUPPORT[k].name} recharging: ${fmtCd(progress.support[k])}.`), 'warn', 2200); return; }
   setTool(null); select(null);
   supportMode = k; pendingStrike = -1;
   $('hint').hidden = false;
-  $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${SUPPORT[k].name}</b> – ${SUPPORT[k].desc}<br><small>${isTouch ? 'Napauta kohdetta, napauta uudelleen vahvistaaksesi.' : 'Klikkaa kohdetta. Esc peruu.'}</small>`;
+  $('hint').innerHTML = `<span class="hico">${ICONS[k]}</span><b>${SUPPORT[k].name}</b> – ${dd(SUPPORT[k])}<br><small>${isTouch ? L('Napauta kohdetta, napauta uudelleen vahvistaaksesi.', 'Tap a target, tap again to confirm.') : L('Klikkaa kohdetta. Esc peruu.', 'Click a target. Esc cancels.')}</small>`;
   updateSupportUI(true);
 }
 function cancelSupport() {
@@ -1489,13 +2055,14 @@ function previewStrike(i) {
   const r = SUPPORT[supportMode].radius, x = ix(i) + .5, z = iz(i) + .5, y = tileTop(i) + .07;
   for (const m of [strikeRing, strikeDisk]) { m.visible = true; m.position.set(x, y, z); m.scale.setScalar(r); }
 }
+function supportCd(k) { return Math.max(240, SUPPORT[k].cd - (progress.upg.support || 0) * 120); }
 function fmtCd(s) { s = Math.ceil(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 function callStrike(k, i) {
   const x = ix(i) + .5, z = iz(i) + .5;
-  progress.support[k] = SUPPORT[k].cd; saveProgress();
+  progress.support[k] = supportCd(k); saveProgress(); sfx(k === 'f35' ? 'jet' : 'himars');
   cancelSupport();
   if (k === 'himars') {
-    toast('🚀 HIMARS: tulitehtävä vahvistettu – raketit matkalla!', 'ok', 2500);
+    toast(L('🚀 HIMARS: tulitehtävä vahvistettu – raketit matkalla!', '🚀 HIMARS: fire mission confirmed – rockets inbound!'), 'ok', 2500);
     for (let n = 0; n < 8; n++) {
       const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 1.5;
       const tx = x + Math.cos(a) * r, tz = z + Math.sin(a) * r;
@@ -1504,7 +2071,7 @@ function callStrike(k, i) {
       strikes.push({ kind: 'rocket', mesh: m, from: V(-6, .6, clamp(z + (n - 2.5) * .15, 0, H)), to: V(tx, groundY(tx, tz), tz), t: -n * .14, T: 1.6, h: 5.5, puffT: 0 });
     }
   } else {
-    toast('✈️ F-35: täsmäisku tulossa!', 'ok', 2500);
+    toast(L('✈️ F-35: täsmäisku tulossa!', '✈️ F-35: precision strike inbound!'), 'ok', 2500);
     const m = JET_PROTO.clone(); m.position.set(-10, 3, z); world.add(m);
     strikes.push({ kind: 'jet', mesh: m, x: -10, z, y: 3, tx: x, tz: z, dropped: false });
   }
@@ -1538,7 +2105,7 @@ function updateStrikes(dt) {
         s.dropped = true;
         // ilmatorjunta: lennokit alas
         for (const e of enemies) if (!e.dead && e.cls === 'air' && Math.hypot(e.x - s.tx, e.z - s.tz) < 4.5) {
-          tracer(V(s.x, s.y, s.z), V(e.x, e.y, e.z), 0xbfe6ff, .25); hurt(e, 9999, [0, 0, 0, 1]);
+          tracer(V(s.x, s.y, s.z), V(e.x, e.y, e.z), 0xbfe6ff, .25); hurt(e, 9999, [0, 0, 0, 1, 1]);
         }
         // täsmäpommit raskaimpiin maalikohteisiin
         const tg = enemies.filter(e => !e.dead && e.cls !== 'air' && Math.hypot(e.x - s.tx, e.z - s.tz) < SUPPORT.f35.radius)
@@ -1576,7 +2143,7 @@ function tickSupport(dt) {
 const supEls = {};
 for (const [k, d] of Object.entries(SUPPORT)) {
   const b = document.createElement('button'); b.className = 'sup';
-  b.title = d.desc;
+  b.title = dd(d);
   b.innerHTML = `<span class="ic">${ICONS[k]}</span><span class="nm">${d.name}</span><span class="st"></span><i class="fill"></i>`;
   b.onclick = () => setSupportMode(k);
   $('support').appendChild(b); supEls[k] = b;
@@ -1587,9 +2154,28 @@ function updateSupportUI(force) {
     b.classList.toggle('ready', ready && phase === 'wave');
     b.classList.toggle('armed', supportMode === k);
     b.classList.toggle('cooling', !ready);
-    b.querySelector('.st').textContent = supportMode === k ? 'VALITSE KOHDE' : ready ? (phase === 'wave' ? 'VALMIS' : 'valmiina') : fmtCd(cd);
-    b.querySelector('.fill').style.width = ready ? '100%' : `${(1 - cd / SUPPORT[k].cd) * 100}%`;
+    b.querySelector('.st').textContent = supportMode === k ? L('VALITSE KOHDE', 'PICK TARGET') : ready ? (phase === 'wave' ? L('VALMIS', 'READY') : L('valmiina', 'ready')) : fmtCd(cd);
+    b.querySelector('.fill').style.width = ready ? '100%' : `${(1 - cd / supportCd(k)) * 100}%`;
+    b.classList.toggle('blocked', k === 'f35' && phase === 'wave' && !!COND[cond].noAir);
   }
+}
+
+// ================= ERIKOISJOUKOT SELUSTAAN =================
+function spawnSpecialForces() {
+  specDone = true;
+  const f = fields.inf, opts = [];
+  for (let z = 0; z < H; z++) for (let x = 9; x < BORDER - 5; x++) {
+    const i = idx(x, z);
+    if (f.dist[i] >= INF || structs.has(i)) continue;
+    if ([...structs.values()].some(st => Math.hypot(st.x - x - .5, st.z - z - .5) < 2.2)) continue;
+    opts.push(i);
+  }
+  if (!opts.length) return;
+  const c = opts[(Math.random() * opts.length) | 0], n = 2 + Math.floor(wave / 4);
+  for (let k = 0; k < n; k++) spawnEnemy('spec', c);
+  for (const e of enemies.slice(-n)) { e.ox = (Math.random() - .5) * .5; e.oz = (Math.random() - .5) * .5; }
+  toast(L('⚠ Erikoisjoukkoja havaittu selustassa!', '⚠ Special forces spotted behind our lines!'), 'warn', 3500);
+  sfx('alarm');
 }
 
 // ================= PÄÄSILMUKKA =================
@@ -1601,6 +2187,7 @@ function update(dt) {
     while (barrageTimes.length && barrageTimes[0] <= waveTime) { barrageTimes.shift(); triggerBarrage(); }
   }
   for (const e of enemies) if (!e.dead) updateEnemy(e, dt);
+  updateUnits(dt);
   updateTowers(dt);
   updateProjectiles(dt);
   updateBarrages(dt);
@@ -1609,7 +2196,8 @@ function update(dt) {
   updateStrikes(dt);
   if (phase === 'wave') tickSupport(dt);
   enemies = enemies.filter(e => !e.dead);
-  if (phase === 'wave' && !queue.length && !enemies.length && !barrages.length && !gameOver) endWave();
+  if (phase === 'wave' && !specDone && waveTime > 12 + (wave % 3) * 3) spawnSpecialForces();
+  if (phase === 'wave' && !queue.length && specDone && !enemies.some(e => !e.d.static) && !barrages.length && !gameOver) endWave();
 }
 
 // käynnistys: näytetään ensimmäinen sektori taustalla
@@ -1626,6 +2214,8 @@ function frame(now) {
   else if (screen === 'sector' && deer.length && !paused) updateDeer(dt);
   updateHUD(false);
   if (screen === 'sector' && (now - supportUiT > 250)) { supportUiT = now; updateSupportUI(); }
+  if (snow.visible && !paused) { const a = snowGeo.attributes.position.array; for (let k = 1; k < a.length; k += 3) { a[k] -= dt * 2.2; a[k - 1] -= dt * .8; if (a[k] < 0) { a[k] = 9; a[k - 1] = -4 + Math.random() * (W + 8); } } snowGeo.attributes.position.needsUpdate = true; }
+  if (screen === 'sector') tutorialTick();
   const t = controls.target, cx = clamp(t.x, -4, W + 1), cz = clamp(t.z, -1, H + 1);
   camera.position.x += cx - t.x; camera.position.z += cz - t.z; t.x = cx; t.z = cz;
   controls.update();

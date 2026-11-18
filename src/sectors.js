@@ -8,11 +8,11 @@ const FELL_BIRCH = { n: 2, scale: .6, slim: .9, col: 0x5d7a3e, winterCol: 0x7d8f
 
 export const SECTORS = [
   {
-    id: 'kaakko', no: 1, name: 'Kaakkois-Suomi', short: 'Vaalimaa', area: 'Vaalimaa – Hamina',
+    id: 'kaakko', nameEn: 'South-East Finland', descEn: 'Highway 7 (E18) and the Gulf of Finland coast. Open fields and good roads make this the main axis for armour.', factsEn: ["🛣 Three roads, a wide highway in the middle", "🌊 The sea bounds the south", "🛡 The enemy brings many tanks"], no: 1, name: 'Kaakkois-Suomi', short: 'Vaalimaa', area: 'Vaalimaa – Hamina',
     city: 'Hamina', cityTo: 'Haminaa', cityIn: 'Haminaan',
     lat: [60.45, 60.95], crossing: [27.85, 60.57], target: [27.2, 60.57],
     seed: 1, forest: .47, clearing: .6, money: 650, waves: 10, townSize: 13,
-    winter: [5, 6, 7, 8], mix: { inf: 1, bmp: 1.2, tank: 1.3, drone: 1 }, reindeer: 0, trees: SPRUCE,
+    winter: [5, 6, 7, 8], mix: { inf: 1, bmp: 1.2, tank: 1.3, drone: 1, heli: .8 }, reindeer: 0, trees: SPRUCE,
     roads: [
       [[29, 9], [24, 9], [20, 8], [14, 8], [8, 9], [0, 9]],
       [[29, 3], [24, 3], [19, 5], [15, 7], [14, 8]],
@@ -25,7 +25,7 @@ export const SECTORS = [
     facts: ['🛣 Kolme tietä, leveä valtatie keskellä', '🌊 Meri rajaa etelän', '🛡 Vihollisella paljon panssareita'],
   },
   {
-    id: 'ekarjala', no: 2, name: 'Etelä-Karjala', short: 'Imatra', area: 'Imatra – Lappeenranta',
+    id: 'ekarjala', nameEn: 'South Karelia', descEn: 'Lake Saimaa and the Vuoksi river. Waterways force the attacker onto narrow isthmuses and bridges – ideal for ambushes.', factsEn: ["💧 The Vuoksi splits the map, bridges are key points", "🌾 Lots of farmland and industry", "🧊 In winter the Vuoksi freezes over"], no: 2, name: 'Etelä-Karjala', short: 'Imatra', area: 'Imatra – Lappeenranta',
     city: 'Lappeenranta', cityTo: 'Lappeenrantaa', cityIn: 'Lappeenrantaan',
     lat: [60.95, 61.8], crossing: [29.2, 61.18], target: [28.19, 61.06],
     seed: 2, forest: .52, clearing: .7, money: 650, waves: 10, townSize: 16,
@@ -43,7 +43,7 @@ export const SECTORS = [
     facts: ['💧 Vuoksi halkaisee kartan, sillat ovat avainkohtia', '🌾 Paljon peltoa ja teollisuusaluetta', '🧊 Talvella Vuoksi jäätyy ja aukeaa'],
   },
   {
-    id: 'pkarjala', no: 3, name: 'Pohjois-Karjala', short: 'Niirala', area: 'Niirala – Joensuu',
+    id: 'pkarjala', nameEn: 'North Karelia', descEn: 'Vast spruce forests and long lakes running north-west to south-east. Infantry infiltrates through the woods.', factsEn: ["🌲 Dense forest – infantry terrain", "💧 Long chains of lakes divide the map", "👣 The enemy relies on infantry"], no: 3, name: 'Pohjois-Karjala', short: 'Niirala', area: 'Niirala – Joensuu',
     city: 'Joensuu', cityTo: 'Joensuuta', cityIn: 'Joensuuhun',
     lat: [61.8, 63.55], crossing: [30.6, 62.15], target: [29.76, 62.6],
     seed: 3, forest: .38, clearing: .5, money: 650, waves: 10, townSize: 13,
@@ -58,7 +58,7 @@ export const SECTORS = [
     facts: ['🌲 Tiheää metsää – jalkaväen maastoa', '💧 Pitkät järvijaksot jakavat kartan', '👣 Vihollisella runsaasti jalkaväkeä'],
   },
   {
-    id: 'kainuu', no: 4, name: 'Kainuu', short: 'Vartius', area: 'Vartius – Kajaani',
+    id: 'kainuu', nameEn: 'Kainuu', descEn: 'Wilderness and wide aapa bogs. Only one proper road – but in winter the frozen bogs become highways.', factsEn: ["🟫 Many open bogs", "🛣 One main road and a forest track", "🦌 A few reindeer have strayed south"], no: 4, name: 'Kainuu', short: 'Vartius', area: 'Vartius – Kajaani',
     city: 'Kajaani', cityTo: 'Kajaania', cityIn: 'Kajaaniin',
     lat: [63.55, 65.6], crossing: [29.95, 64.5], target: [27.73, 64.23],
     seed: 4, forest: .36, clearing: .4, money: 650, waves: 10, townSize: 11,
@@ -74,7 +74,7 @@ export const SECTORS = [
     facts: ['🟫 Paljon aapasoita', '🛣 Yksi päätie ja metsäautotie', '🦌 Muutama poro eksynyt etelään'],
   },
   {
-    id: 'koillismaa', no: 5, name: 'Koillismaa – Salla', short: 'Salla', area: 'Salla – Kemijärvi',
+    id: 'koillismaa', nameEn: 'Koillismaa – Salla', descEn: 'The fells, bogs and sparse pine forests of Salla. Positions on the fell tops see far. Reindeer graze everywhere.', factsEn: ["⛰ Fells: impassable for vehicles, +1 range for positions", "🛣 Only one road", "❄️ A long winter"], no: 5, name: 'Koillismaa – Salla', short: 'Salla', area: 'Salla – Kemijärvi',
     city: 'Kemijärvi', cityTo: 'Kemijärveä', cityIn: 'Kemijärvelle',
     lat: [65.6, 67.9], crossing: [29.4, 66.85], target: [27.4, 66.71],
     seed: 5, forest: .5, clearing: .4, money: 625, waves: 10, townSize: 9, north: true,
@@ -90,11 +90,11 @@ export const SECTORS = [
     facts: ['⛰ Tunturit: ajoneuvot eivät pääse, asemille +1 kantama', '🛣 Vain yksi tie', '❄️ Pitkä talvi'],
   },
   {
-    id: 'ylalappi', no: 6, name: 'Ylä-Lappi', short: 'Raja-Jooseppi', area: 'Raja-Jooseppi – Ivalo',
+    id: 'ylalappi', nameEn: 'Upper Lapland', descEn: 'Fells and mountain birch of Upper Lapland. Winter comes early and lasts long. There are more reindeer than people.', factsEn: ["⛰ Many fells – high firing positions", "🛣 One road, few vehicles", "🚁 The enemy relies on infantry, drones and helicopters"], no: 6, name: 'Ylä-Lappi', short: 'Raja-Jooseppi', area: 'Raja-Jooseppi – Ivalo',
     city: 'Ivalo', cityTo: 'Ivaloa', cityIn: 'Ivaloon',
     lat: [67.9, 69.1], crossing: [28.45, 68.5], target: [27.54, 68.66],
     seed: 6, forest: .58, clearing: .3, money: 600, waves: 10, townSize: 8, north: true,
-    winter: [2, 3, 4, 5, 6, 7, 8, 9], mix: { inf: 1.35, bmp: .7, tank: .4, drone: 1.3 }, reindeer: 18, trees: FELL_BIRCH,
+    winter: [2, 3, 4, 5, 6, 7, 8, 9], mix: { inf: 1.35, bmp: .7, tank: .4, drone: 1.3, heli: 1.4 }, reindeer: 18, trees: FELL_BIRCH,
     roads: [
       [[29, 6], [22, 7], [15, 9], [8, 8], [0, 8]],
     ],

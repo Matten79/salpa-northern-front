@@ -6,16 +6,29 @@
 
 **Pelaa:** `https://<käyttäjätunnus>.github.io/salpa-northern-front/`
 
+## Ominaisuudet
+
+- Strateginen kampanja: 6 sektoria, viikkoja 12, uhka kasvaa (punainen = kiireellinen, keltainen = uhka kasvaa), valtakunnan kestävyys
+- Tower defence -taistelut: 10 rakennettavaa kalustoa + purku, linnoittaminen, päivitykset
+- Hankinnat määrärahoilla: Leopard 2A6 ja Patria AMV (liikkuvat), K9 Moukari, NASAMS, pysyvät parannukset
+- Tulituki: F-35 ja HIMARS (latautuminen 10 min)
+- Viholliset: jalkaväki, BMP, panssarivaunu, lennokki, taisteluhelikopteri, häirintäasema, erikoisjoukot, tykistöpatteri
+- Vuodenajat, yö, sumu ja lumimyräkkä; porot pohjoisessa
+- Asemat säilyvät pidetyssä sektorissa, kesken jäänyt taistelu jatkuu
+- Äänet, grafiikka-asetus, opastus, suomi/englanti
+- Asennettavissa puhelimen kotinäytölle (PWA), toimii myös ilman nettiä
+
 ## Rakenne
 
 ```
 src/main.js       pelimoottori (maasto, reitinhaku, tornit, viholliset, UI, strateginen kartta)
 src/sectors.js    sektoreiden asetukset ja Suomen kartan ääriviivat
 src/icons.js      rakennusten ja tulituen SVG-kuvakkeet
+src/audio.js      äänet (WebAudio-synteesi, ei äänitiedostoja)
 template.html     HTML-pohja ja tyylit
-assets/           kansikuva (cover.jpg) ja Oswald-fontti, upotetaan buildissa
+assets/           kansikuva, Oswald-fontti ja sovelluskuvakkeet
 build.mjs         build-skripti (esbuild) → docs/index.html
-docs/index.html   valmis peli yhtenä tiedostona (GitHub Pages julkaisee tämän)
+docs/             valmis peli (index.html) + PWA-tiedostot (manifest, sw.js, kuvakkeet)
 ```
 
 ## Kehitys omalla koneella

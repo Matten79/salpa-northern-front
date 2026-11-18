@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Salpa: Northern Front</title>
+<meta name="theme-color" content="#0d141b">
+<!--PWA-->
 <style>
 @font-face{font-family:"Oswald";font-weight:600;font-style:normal;font-display:swap;src:url(data:font/woff2;base64,/*FONT*/) format("woff2")}
 *{box-sizing:border-box}
@@ -19,7 +21,7 @@ button.primary{background:#2f6fb5;border-color:#6aaaf0;font-weight:600}
 #hud .sp{flex:1}
 #bottom{position:fixed;left:8px;right:8px;bottom:8px;display:flex;gap:8px;align-items:stretch}
 #tools{display:flex;gap:6px;overflow-x:auto;flex:1;padding:6px;scrollbar-width:none}
-.tool{min-width:76px;display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 8px;font-size:12px;line-height:1.2}
+.tool{min-width:70px;flex:none;display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 6px;font-size:11.5px;line-height:1.2;white-space:nowrap}
 .tool .ico{display:block;height:30px;color:#e8eef3}.tool .ico svg{display:block}.tool small{color:#ffd27a}
 .tool.sel .ico{color:#9fd0ff}
 .hico{display:inline-block;vertical-align:-8px;margin-right:6px;color:#e8eef3}.hico svg{width:26px;height:26px}
@@ -74,7 +76,43 @@ button.primary{background:#2f6fb5;border-color:#6aaaf0;font-weight:600}
   font-size:min(2.3vw,4.1vh);letter-spacing:.03em;text-shadow:0 2px 0 #10202f;white-space:nowrap}
 #cover .press span{animation:blink 1.6s ease-in-out infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-body.onmap #toasts,body.onmap #hud,body.onmap #bottom,body.onmap #intel,body.onmap #hint,body.onmap #panel{display:none!important}
+
+#tut{position:fixed;top:56px;left:50%;transform:translateX(-50%);width:min(520px,calc(100% - 16px));padding:12px 14px;z-index:6;font-size:14px;line-height:1.45;border-color:#6aaaf0;box-shadow:0 6px 30px rgba(0,0,0,.5)}
+#tut .tstep{font-size:11px;color:#8fc3ff;letter-spacing:1px;margin-bottom:4px}
+#tut .tbtns{display:flex;gap:8px;margin-top:10px;align-items:center}
+#tut .ghost,#modal .ghost{background:none;border:none;color:#8da0ae;text-decoration:underline;font-size:12px}
+.tut-hl{animation:tuthl 1s ease-in-out infinite;position:relative;z-index:2}
+@keyframes tuthl{0%,100%{box-shadow:0 0 0 2px #ffb347}50%{box-shadow:0 0 0 5px rgba(255,179,71,.35)}}
+#modal{position:fixed;inset:0;z-index:20;background:rgba(5,10,15,.6);display:flex;align-items:center;justify-content:center}
+#modal[hidden]{display:none}
+#modal .box{position:relative;width:min(520px,calc(100% - 24px));max-height:88vh;overflow:auto;padding:18px 20px}
+#modal h2{margin:0 0 10px;font-size:20px;display:flex;align-items:center;gap:8px}
+#modal h2 svg{width:24px;height:24px}
+#modal .close{position:absolute;top:8px;right:8px;background:none;border:none;font-size:16px}
+#modal .small{font-size:13px;color:#b8c6d1}
+.setrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:12px 0}
+.segs{display:flex;gap:4px}
+.seg{padding:6px 10px;font-size:13px}.seg.on{background:#2f6fb5;border-color:#6aaaf0}
+.shopitem{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid rgba(255,255,255,.08)}
+.shopitem .sico{width:34px;height:34px;flex:none;font-size:24px;color:#e8eef3;display:flex;align-items:center;justify-content:center}
+.shopitem .sico svg{width:32px;height:32px}
+.shopitem .sinfo{flex:1;display:flex;flex-direction:column;gap:2px}.shopitem small{color:#b8c6d1;font-size:12px}
+.shopitem button{min-width:92px}
+.shopitem.owned{opacity:.6}
+#brief .campbar{display:flex;gap:6px;margin:10px 0 0}
+#brief .campbar button{flex:1;font-size:13px;padding:8px 6px}
+#brief .campbar b{color:#ffd27a}
+#brief .ico-btn{float:right;background:none;border:none;padding:0 2px;color:#b8c6d1;margin-top:-3px}
+#brief .ico-btn svg{width:20px;height:20px}
+#brief .resume{margin:10px 0;padding:10px;border:1px solid #6aaaf0;border-radius:8px;background:rgba(90,180,255,.08);font-size:13px}
+#brief .resume .row2{margin-top:8px}
+#brief .okline{margin-top:8px;font-size:13px;color:#9fd0ff}
+.mtip{font-size:12px;color:#9fd0ff;margin:2px 0 6px}
+.sup.blocked{opacity:.4}
+.tool.mob .ico{color:#c9e6a8}
+.tool.demo .ico{color:#ffb38a}.tool.demo small{color:#ffb38a}.tool.demo.sel{outline-color:#ff9933;background:#4a2f22}
+
+body.onmap #tut,body.onmap #toasts,body.onmap #hud,body.onmap #bottom,body.onmap #intel,body.onmap #hint,body.onmap #panel{display:none!important}
 #mapScreen{position:fixed;inset:0;display:flex;gap:12px;padding:12px;background:radial-gradient(ellipse at 30% 40%,#1d3a52,#0b141c 75%);z-index:4}
 #mapScreen[hidden]{display:none}
 #mapWrap{flex:1;min-width:0;display:flex;align-items:center;justify-content:center}
@@ -143,16 +181,18 @@ body.onmap #toasts,body.onmap #hud,body.onmap #bottom,body.onmap #intel,body.onm
   <div class="stat panel" id="sectorName"></div>
   <div class="stat panel">💰 <b id="money"></b> €</div>
   <div class="stat panel">🛡️ <b id="lives"></b></div>
-  <div class="stat panel">Aalto <b id="wave"></b></div>
+  <div class="stat panel"><span id="waveLbl">Aalto</span> <b id="wave"></b></div>
   <div class="stat panel" id="season"></div>
   <div class="sp"></div>
   <button class="panel" id="camBtn" title="Palauta kamera">⌖</button>
+  <button class="panel" id="setBtn" title="Asetukset">⚙</button>
   <button class="panel" id="speedBtn">1×</button>
   <button class="panel" id="pauseBtn">⏸</button>
 </div>
 <div id="hint" class="panel" hidden></div>
 <div id="intel" class="panel" hidden></div>
 <div id="toasts"></div>
+<div id="tut" class="panel" hidden></div>
 <div id="panel" class="panel" hidden></div>
 <div id="bottom">
   <div id="tools" class="panel"></div>
@@ -160,21 +200,23 @@ body.onmap #toasts,body.onmap #hud,body.onmap #bottom,body.onmap #intel,body.onm
   <button id="waveBtn" class="primary">▶ Aloita aalto 1</button>
 </div>
 <div id="mapScreen" hidden><div id="mapWrap"><svg id="mapSvg" viewBox="0 0 335 612" preserveAspectRatio="xMidYMid meet"></svg></div><div id="brief" class="panel"></div></div>
+<div id="modal" hidden><div class="box panel"></div></div>
 <div id="overlay"><div class="box panel">
   <h1 class="logo">SALPA<span>Northern Front</span></h1>
-  <p class="tag">Itärajan puolustus – Vaalimaalta Ylä-Lappiin</p>
-  <p>Itäraja on jaettu <b>kuuteen sektoriin</b> Kaakkois-Suomesta Ylä-Lappiin. Jokaisella on oma maastonsa, omat tiensä ja oma puolustettava kaupunkinsa. Vihollinen hyökkää eri suunnista – päätä, minne joukot lähetetään.</p>
+  <p class="tag" id="tagline">Itärajan puolustus – Vaalimaalta Ylä-Lappiin</p>
+  <div id="introText"><p>Itäraja on jaettu <b>kuuteen sektoriin</b> Kaakkois-Suomesta Ylä-Lappiin. Jokaisella on oma maastonsa, omat tiensä ja oma puolustettava kaupunkinsa. Vihollinen hyökkää eri suunnista – päätä, minne joukot lähetetään.</p>
   <ul>
     <li><b>Maasto ratkaisee:</b> jalkaväki kulkee metsissä ja soilla, ajoneuvot pysyvät teillä ja pelloilla. Järvet, meri ja tunturit pysäyttävät ajoneuvot.</li>
     <li><b>Tunturit</b> (Lappi): asemat näkevät tunturin laelta kauas, +1 kantama.</li>
     <li><b>Hammaskivet</b> pysäyttävät ajoneuvot. Ohjaa vihollinen tulipesiin, mutta reittiä ei saa sulkea kokonaan.</li>
     <li><b>Hyökkäykset:</b> kartalla punainen raja = kiireellinen suurhyökkäys, keltainen = uhka kasvaa. Jokainen taistelu kestää viikon, ja sillä aikaa muiden sektoreiden uhka kasvaa. Jos kiireellinen sektori jää ilman puolustusta, valtakunnan kestävyys heikkenee. Kestä 12 viikkoa.</li>
     <li><b>Tulituki:</b> ✈️ F-35 ja 🚀 HIMARS tilataan taistelun aikana napista (pikanäppäimet F ja H). Käytön jälkeen latautuminen kestää 10 minuuttia.</li>
-    <li><b>Linnoita:</b> panssarit, lennokit ja tykistö tuhoavat asemia.</li>
-    <li><b>Talvi</b> jäädyttää järvet ja suot. Pohjoisessa se tulee aiemmin ja kestää pidempään.</li>
+    <li><b>Hankinnat:</b> torjutuista hyökkäyksistä saa määrärahoja: Leopard 2A6, K9 Moukari, NASAMS ja Patria AMV.</li>
+    <li><b>Linnoita:</b> panssarit, lennokit, helikopterit ja tykistö tuhoavat asemia. Asemat säilyvät sektorissa, jonka pidät.</li>
+    <li><b>Talvi</b> jäädyttää järvet ja suot. Yö, sumu ja lumimyräkkä lyhentävät kantamia.</li>
     <li><b>Porot</b> laiduntavat pohjoisessa ja voivat tukkia vihollisen kolonnan tien.</li>
   </ul>
-  <p><small>Ohjaus: vedä = siirrä karttaa · kaksi sormea / hiiren oikea = kierrä ja zoomaa · näppäimet 1–6 = rakennukset, välilyönti = aalto.</small></p>
+  <p><small>Ohjaus: vedä = siirrä karttaa · kaksi sormea / hiiren oikea = kierrä ja zoomaa · näppäimet 1–9 = rakennukset, välilyönti = aalto, F/H = tulituki.</small></p></div>
   <div class="row2"><button class="primary" id="startBtn">🗺 Avaa kartta</button></div>
 </div></div>
 <script>/*BUNDLE*/</script>

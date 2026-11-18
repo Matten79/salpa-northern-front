@@ -100,7 +100,7 @@ const B = (fi, en) => ({ fi, en });             // kaksikielinen raporttirivi
 const rt = r => (r && typeof r === 'object' ? L(r.fi, r.en) : r);
 // --- asetukset
 const SET_KEY = 'salpa.asetukset';
-const settings = { gfx: matchMedia('(pointer: coarse)').matches ? 'med' : 'high', sound: true, lang: 'fi' };
+const settings = { gfx: matchMedia('(pointer: coarse)').matches ? 'med' : 'high', sound: true, lang: 'fi', auto: true };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SET_KEY)) || {}); } catch (e) { /* oletukset */ }
 function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (e) { /* ohitetaan */ } }
 let spawnTimer = 0, waveTime = 0, hpMult = 1, dmgMult = 1;
@@ -1373,8 +1373,11 @@ function waveComp(n) {
     ew: n >= 7 ? Math.max(0, Math.floor((n - 4) / 3)) : 0,
   };
 }
+let autoT = -1, autoShown = -1;
+const AUTO_SEC = 10;
 function startWave() {
   if (phase !== 'build' || gameOver) return;
+  autoT = -1; showCountdown();
   wave++; phase = 'wave'; waveTime = 0; spawnTimer = 0; specDone = wave < 5; specTile = -1; specMark.visible = false;
   hpMult = (1 + .12 * (wave - 1)) * (1 + (progress.week - 1) * .04); dmgMult = 1 + .06 * (wave - 1);
   const c = waveComp(wave), items = [];
@@ -1415,6 +1418,7 @@ function endWave() {
   if (nextCond === 'storm' && !seasonOf(wave + 1)) nextCond = 'fog';
   preview.visible = true; updateHUD(true);
   saveBattle();
+  if (!gameOver) autoT = AUTO_SEC;
 }
 function setWinter(w, announce) {
   winter = w;
@@ -1437,7 +1441,7 @@ function setWinter(w, announce) {
   if (announce) toast(w ? L('❄️ Talvi saapui – järvet ja suot jäätyivät. Panssarit pääsevät jäitä pitkin!', '❄️ Winter has come – lakes and swamps froze. Tanks can now cross the ice!') : L('☀️ Sulan maan aika – jäät sulivat, järvet ja suot ovat taas esteitä.', '☀️ The thaw – the ice melted, lakes and swamps are obstacles again.'), 'info', 5000);
 }
 function endGame(win) {
-  gameOver = true; const o = $('overlay'); o.hidden = false;
+  gameOver = true; autoT = -1; showCountdown(); const o = $('overlay'); o.hidden = false;
   const first = !battleResolved;
   if (first) sfx(win ? 'victory' : 'defeat');
   resolveBattle(cfg.id, win);
@@ -1535,6 +1539,7 @@ function loadSector(id, snap) {
   else toast(L(`${cfg.name}: puolusta ${cfg.cityTo} – ${battleWaves} aaltoa${battleWaves === cfg.waves ? ' (suurhyökkäys)' : ' (tunnusteluisku)'}.`, `${cfg.nameEn || cfg.name}: defend ${cfg.city} – ${battleWaves} waves${battleWaves === cfg.waves ? ' (major offensive)' : ' (probing attack)'}.`), 'info', 4000);
   saveBattle();
   maybeStartTutorial();
+  autoT = AUTO_SEC;
 }
 // --- kesken jääneen taistelun tallennus (rakennusvaiheessa)
 function saveBattle() {
@@ -1704,7 +1709,7 @@ function goSector(id) {
   if (pb && pb.id === id) loadSector(id, pb); else loadSector(id);
 }
 function showMap() {
-  screen = 'map'; running = false;
+  screen = 'map'; running = false; autoT = -1; showCountdown();
   mapSel = progress.battle ? progress.battle.id : mostUrgent(); mapTapId = null;
   setTool(null); select(null); fades = []; setCondition('clear', true);
   if (SECTORS.some(x => levelOf(threatOf(x.id)) === 'red')) sfx('alarm');
@@ -1723,6 +1728,7 @@ function openSettings() {
     <div class="setrow"><span>${L('Grafiikka', 'Graphics')}</span><div class="segs">${opt('gfx', 'high', L('Korkea', 'High'))}${opt('gfx', 'med', L('Keski', 'Medium'))}${opt('gfx', 'low', L('Matala', 'Low'))}</div></div>
     <p class="small">${L('Matala: ei varjoja ja pienempi tarkkuus – sujuvampi heikoilla puhelimilla.', 'Low: no shadows and lower resolution – smoother on weak phones.')}</p>
     <div class="setrow"><span>${L('Äänet', 'Sound')}</span><div class="segs">${opt('sound', true, L('Päällä', 'On'))}${opt('sound', false, L('Pois', 'Off'))}</div></div>
+    <div class="setrow"><span>${L('Aallot alkavat automaattisesti', 'Waves start automatically')}</span><div class="segs">${opt('auto', true, L('Päällä', 'On'))}${opt('auto', false, L('Pois', 'Off'))}</div></div>
     <div class="setrow"><span>${L('Kieli', 'Language')}</span><div class="segs">${opt('lang', 'fi', 'Suomi')}${opt('lang', 'en', 'English')}</div></div>
     <div class="setrow"><span>${L('Opastus', 'Tutorial')}</span><button id="tutReset">${L('Näytä opastus uudelleen', 'Show tutorial again')}</button></div>`);
   $('modal').querySelectorAll('.seg').forEach(b => b.onclick = () => {
@@ -1731,6 +1737,7 @@ function openSettings() {
     if (k === 'gfx') applyGfx();
     if (k === 'sound') { setSoundEnabled(v); if (v) { initAudio(); sfx('ui'); } }
     if (k === 'lang') applyLang();
+    if (k === 'auto' && v && screen === 'sector' && phase === 'build' && autoT < 0) autoT = AUTO_SEC;
     openSettings();
   });
   $('tutReset').onclick = () => { try { localStorage.removeItem(TUT_KEY); } catch (e) { /* */ } toast(L('Opastus näytetään seuraavassa taistelussa.', 'The tutorial will show in the next battle.'), 'ok', 2500); closeModal(); };
@@ -1793,6 +1800,31 @@ function applyLang() {
   rebuildTools();
   if (screen === 'map') { buildMap(); renderBrief(); }
   if (screen === 'sector') { updateHUD(true); updateSupportUI(true); if (selected) refreshPanel(); }
+}
+
+// ================= AALLON AUTOMAATTINEN ALOITUS =================
+function countdownTick(dt) {
+  if (autoT < 0 || screen !== 'sector' || phase !== 'build' || gameOver) { if (autoShown !== -1) showCountdown(); return; }
+  const blocked = !settings.auto || tut || !$('modal').hidden || !$('overlay').hidden;
+  if (blocked) { if (autoShown !== -1) showCountdown(); return; }
+  if (!paused) {
+    const before = Math.ceil(autoT);
+    autoT -= dt;
+    const after = Math.ceil(autoT);
+    if (after !== before && after <= 3 && after > 0) sfx('ui');
+    if (autoT <= 0) { autoT = -1; startWave(); return; }
+  }
+  showCountdown();
+}
+function showCountdown() {
+  const el = $('countdown');
+  const on = autoT > 0 && screen === 'sector' && phase === 'build' && !gameOver && settings.auto && !tut && $('modal').hidden && $('overlay').hidden;
+  if (!on) { el.hidden = true; autoShown = -1; return; }
+  const n = Math.ceil(autoT), key = n * 10 + (paused ? 1 : 0);
+  if (key === autoShown && !el.hidden) return;
+  autoShown = key; el.hidden = false;
+  el.classList.toggle('urgent', n <= 3 && !paused);
+  el.innerHTML = `<div class="cd-label">${L(`Aalto ${wave + 1} alkaa`, `Wave ${wave + 1} starts in`)}</div><div class="cd-num" data-n="${n}">${n}</div><div class="cd-sub">${paused ? L('⏸ tauko', '⏸ paused') : L('paina ▶ aloittaaksesi heti', 'press ▶ to start now')}</div>`;
 }
 
 // ================= OPASTUS =================
@@ -2454,12 +2486,13 @@ document.body.classList.add('onmap');
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const rawDt = Math.min(.25, (now - last) / 1000), dt = Math.min(.05, rawDt); last = now;
   if (screen === 'map') return;
   if (screen === 'sector' && running && !paused && !gameOver) for (let k = 0; k < speed; k++) update(dt);
   else if (screen === 'sector' && deer.length && !paused) updateDeer(dt);
   updateHUD(false);
   if (screen === 'sector' && !paused) envStep(dt);
+  countdownTick(rawDt);
   if (screen === 'sector' && (now - supportUiT > 250)) { supportUiT = now; updateSupportUI(); }
   if (snow.visible && !paused) { const a = snowGeo.attributes.position.array; for (let k = 1; k < a.length; k += 3) { a[k] -= dt * 2.2; a[k - 1] -= dt * .8; if (a[k] < 0) { a[k] = 9; a[k - 1] = -4 + Math.random() * (W + 8); } } snowGeo.attributes.position.needsUpdate = true; }
   if (screen === 'sector') tutorialTick();

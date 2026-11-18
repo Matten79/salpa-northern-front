@@ -116,7 +116,13 @@ button.primary{background:#2f6fb5;border-color:#6aaaf0;font-weight:600}
 .tool.mob .ico{color:#c9e6a8}
 .tool.demo .ico{color:#ffb38a}.tool.demo small{color:#ffb38a}.tool.demo.sel{outline-color:#ff9933;background:#4a2f22}
 
-body.onmap #tut,body.onmap #toasts,body.onmap #hud,body.onmap #bottom,body.onmap #intel,body.onmap #hint,body.onmap #panel{display:none!important}
+#countdown{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:3;pointer-events:none;text-align:center;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.65),0 0 2px rgba(0,0,0,.9)}
+#countdown .cd-label{font-family:Oswald,Impact,sans-serif;font-size:min(4vw,24px);letter-spacing:3px;text-transform:uppercase;opacity:.9}
+#countdown .cd-num{font-family:Oswald,Impact,sans-serif;font-size:min(22vw,140px);line-height:1;font-weight:600;animation:cdpop 1s ease-out}
+#countdown .cd-sub{font-size:13px;opacity:.75;margin-top:2px}
+#countdown.urgent .cd-num{color:#ffd23f}
+@keyframes cdpop{0%{transform:scale(1.35);opacity:.2}25%{transform:scale(1);opacity:1}100%{transform:scale(.96);opacity:.85}}
+body.onmap #countdown,body.onmap #tut,body.onmap #toasts,body.onmap #hud,body.onmap #bottom,body.onmap #intel,body.onmap #hint,body.onmap #panel{display:none!important}
 #mapScreen{position:fixed;inset:0;display:flex;gap:12px;padding:12px;background:radial-gradient(ellipse at 30% 40%,#1d3a52,#0b141c 75%);z-index:4}
 #mapScreen[hidden]{display:none}
 #mapWrap{flex:1;min-width:0;display:flex;align-items:center;justify-content:center}
@@ -197,6 +203,7 @@ body.onmap #tut,body.onmap #toasts,body.onmap #hud,body.onmap #bottom,body.onmap
 <div id="intel" class="panel" hidden></div>
 <div id="toasts"></div>
 <div id="tut" class="panel" hidden></div>
+<div id="countdown" hidden></div>
 <div id="panel" class="panel" hidden></div>
 <div id="bottom">
   <div id="tools" class="panel"></div>
